@@ -1,9 +1,10 @@
 import { createCliRenderer, TextRenderable, BoxRenderable } from "@opentui/core";
-import type { GameState, Entity, SnakeGameState, FlappyGameState } from "./src/types";
+import type { GameState, Entity, SnakeGameState, FlappyGameState, TwentyFortyEightGameState } from "./src/types";
 import { createInitialState, movePlayer, shoot, update, getExplosionChar, getShieldChar } from "./src/invaders";
 import { initSnake, updateSnake, changeDirection } from "./src/snake";
 import { initFlappy, updateFlappy, jump } from "./src/flappy";
-import { loadGame, saveGame, resetProgress, saveSnakeHighScore, saveFlappyHighScore } from "./src/db";
+import { init2048, move as move2048 } from "./src/2048";
+import { loadGame, saveGame, resetProgress, saveSnakeHighScore, saveFlappyHighScore, saveTwentyFortyEightHighScore } from "./src/db";
 
 const renderer = await createCliRenderer({
   exitOnCtrlC: true, // Let OpenTUI handle Ctrl+C to ensure it works in binaries
@@ -23,7 +24,7 @@ const GAMES: GameOption[] = [
   { id: "space-invaders", name: "SPACE INVADERS", enabled: true },
   { id: "snake", name: "SNAKE", enabled: true },
   { id: "flappy", name: "FLAPPY BIRD", enabled: true },
-  { id: "tetris", name: "TETRIS (Coming Soon)", enabled: false },
+  { id: "2048", name: "2048", enabled: true }
 ];
 
 // App State
@@ -38,6 +39,8 @@ let snakeState: SnakeGameState | null = null;
 let hasSavedSnakeScore = false;
 let flappyState: FlappyGameState | null = null;
 let hasSavedFlappyScore = false;
+let twentyFortyEightState: TwentyFortyEightGameState | null = null;
+let hasSaved2048Score = false;
 
 // Helper to save game state (only for Space Invaders currently)
 function doSaveGame(): void {
@@ -191,6 +194,8 @@ function startGame(gameId: string) {
         startSnake();
     } else if (gameId === "flappy") {
         startFlappy();
+    } else if (gameId === "2048") {
+        start2048();
     }
 }
 
@@ -202,6 +207,8 @@ function stopGame() {
         snakeState = null;
     } else if (currentGameId === "flappy") {
         flappyState = null;
+    } else if (currentGameId === "2048") {
+        twentyFortyEightState = null;
     }
     
     appMode = "MENU";
@@ -747,6 +754,132 @@ function handleFlappyInput(sequence: string): boolean {
 }
 
 // ----------------------------------------------------------------
+// 2048
+// ----------------------------------------------------------------
+
+function start2048() {
+    initContainer();
+    const safeWidth = renderer.width - 6;
+
+    const saved = loadGame();
+    twentyFortyEightState = init2048(safeWidth, 4, saved.twentyFortyEightHighScore);
+    hasSaved2048Score = false;
+
+    titleText = new TextRenderable(renderer, {
+        id: "game-title",
+        content: centerText("🔢 2 0 4 8 🔢", safeWidth),
+        fg: "#FFFFFF",
+    });
+    container.add(titleText);
+
+    scoreText = new TextRenderable(renderer, {
+        id: "score",
+        content: "",
+        fg: "#FFFFFF",
+    });
+    container.add(scoreText);
+
+    container.add(new TextRenderable(renderer, { id: "spacer", content: " " }));
+
+    gameContentLines = [];
+    for (let i = 0; i < 9; i++) {
+        const line = new TextRenderable(renderer, {
+            id: `line-${i}`,
+            content: "",
+            fg: "#FFFFFF",
+        });
+        gameContentLines.push(line);
+        container.add(line);
+    }
+
+    statusText = new TextRenderable(renderer, {
+        id: "status",
+        content: "",
+        fg: "#555555",
+    });
+    container.add(statusText);
+
+    render2048();
+}
+
+function render2048() {
+    if (renderer.isDestroyed || !twentyFortyEightState) return;
+    const state = twentyFortyEightState;
+    const width = renderer.width;
+
+    scoreText.content = centerText(`SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`, width);
+
+    if (state.gameOver) {
+        statusText.content = centerText(`☠ GAME OVER - SCORE: ${state.score} │ R=Restart │ Q=Menu`, width);
+        statusText.fg = "#FF0000";
+    } else if (state.won) {
+        statusText.content = centerText(`🎉 YOU REACHED 2048! │ ARROWS CONTINUE │ Q=Menu`, width);
+        statusText.fg = "#00FF00";
+    } else {
+        statusText.content = centerText(`ARROWS TO SLIDE │ Q MENU`, width);
+        statusText.fg = "#555555";
+    }
+
+    const grid = state.grid;
+    const lines: string[] = [];
+    
+    const border = "+------+------+------+------+";
+    lines.push(centerText(border, width));
+    
+    for (let r = 0; r < 4; r++) {
+        let rowStr = "|";
+        for (let c = 0; c < 4; c++) {
+            const val = grid[r]![c]!;
+            const valStr = val === 0 ? "      " : val.toString().padStart(6, " ");
+            rowStr += valStr + "|";
+        }
+        lines.push(centerText(rowStr, width));
+        lines.push(centerText(border, width));
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+        if (gameContentLines[i]) {
+            gameContentLines[i]!.content = lines[i]!;
+        }
+    }
+}
+
+function handle2048Input(sequence: string): boolean {
+    if (!twentyFortyEightState) return false;
+    const state = twentyFortyEightState;
+
+    if (sequence === "q" || sequence === "Q") {
+        stopGame();
+        return true;
+    }
+
+    if ((sequence === "r" || sequence === "R") && state.gameOver) {
+        start2048();
+        return true;
+    }
+
+    if (state.gameOver) return false;
+
+    let moved = false;
+    if (sequence === "\u001b[A" || sequence === "w" || sequence === "W") { // Up
+        moved = move2048(state, -1, 0);
+    } else if (sequence === "\u001b[B" || sequence === "s" || sequence === "S") { // Down
+        moved = move2048(state, 1, 0);
+    } else if (sequence === "\u001b[D" || sequence === "a" || sequence === "A") { // Left
+        moved = move2048(state, 0, -1);
+    } else if (sequence === "\u001b[C" || sequence === "d" || sequence === "D") { // Right
+        moved = move2048(state, 0, 1);
+    }
+
+    if (moved) {
+        render2048();
+        return true;
+    }
+    
+    return false;
+}
+
+// ----------------------------------------------------------------
 // MAIN LOOPS & HANDLERS
 // ----------------------------------------------------------------
 
@@ -759,6 +892,7 @@ renderer.on("resize", () => {
          if (currentGameId === "space-invaders") startGame("space-invaders");
          if (currentGameId === "snake") startGame("snake");
          if (currentGameId === "flappy") startGame("flappy");
+         if (currentGameId === "2048") startGame("2048");
     }
 });
 
@@ -774,6 +908,7 @@ renderer.prependInputHandler((sequence: string) => {
         if (currentGameId === "space-invaders") return handleSpaceInvadersInput(sequence);
         if (currentGameId === "snake") return handleSnakeInput(sequence);
         if (currentGameId === "flappy") return handleFlappyInput(sequence);
+        if (currentGameId === "2048") return handle2048Input(sequence);
     }
     return false;
 });
@@ -822,8 +957,14 @@ const gameLoopId = setInterval(() => {
               saveFlappyHighScore(flappyState.highScore);
               hasSavedFlappyScore = true;
           }
-          renderFlappy();
-      }
+           renderFlappy();
+       } else if (currentGameId === "2048" && twentyFortyEightState) {
+           if (twentyFortyEightState.gameOver && !hasSaved2048Score) {
+               saveTwentyFortyEightHighScore(twentyFortyEightState.highScore);
+               hasSaved2048Score = true;
+           }
+           render2048();
+       }
   }
 }, 33);
 

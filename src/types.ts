@@ -78,3 +78,13 @@ export interface FlappyGameState {
   height: number;
   tickCount: number;
 }
+
+export interface TwentyFortyEightGameState {
+  grid: number[][]; // 4x4 grid
+  score: number;
+  highScore: number;
+  gameOver: boolean;
+  won: boolean;
+  width: number; // For rendering
+  height: number;
+}
