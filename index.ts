@@ -252,31 +252,34 @@ function stopGame() {
 function startSpaceInvaders() {
     initContainer();
     const savedGame = loadGame();
+
+    // Logic: If dead in saved game (lives <= 0), RESET Level to 1 and Score to 0. (Start Fresh)
+    // If alive, RESUME exactly where left off.
+    
+    // Default safe start
+    let startLevel = 1;
+    let startScore = 0;
+    
+    // Check if we can resume
+    if (savedGame.lives > 0) {
+        startLevel = savedGame.currentLevel;
+        startScore = savedGame.currentScore;
+    } else {
+    }
+    
     invadersState = createInitialState(
         renderer.width, 
         renderer.height, 
-        savedGame.currentLevel, 
+        startLevel, 
         savedGame.highScore
     );
-    // Only inherit score/lives if valid continuation? 
-    // Actually, createInitialState sets defaults (lives=3). 
-    // If we overwrite with savedGame.lives (which might be 0), we break it.
-    // Logic: If loading progress, ensure lives > 0. If 0, reset to 3.
-    // OR: Just trust createInitialState default (3) and only restore Score/Level.
-    // If we want persistent sessions, 'lives' should only be restored if > 0.
     
+    // Apply score/lives if resuming
     if (savedGame.lives > 0) {
         invadersState.lives = savedGame.lives;
-        invadersState.score = savedGame.currentScore;
-    } else {
-        // Saved game was dead => Start Fresh Level 1 logic?
-        // But createInitialState used savedGame.currentLevel...
-        // If lives == 0, we should probably reset level too logic-wise, 
-        // OR just give 3 lives on current level.
-        // Let's give 3 lives (default) and keep score/level as "Continue".
-        // SO: Do NOT overwrite lives with 0.
-        invadersState.score = savedGame.currentScore;
+        invadersState.score = startScore;
     }
+    // Else: createInitialState defaults are used (Level 1, Score 0, Lives 3)
     
     hasSavedInvadersScore = false;
 
@@ -587,7 +590,7 @@ function handleSpaceInvadersInput(sequence: string): boolean {
         } else {
             saveGame({
                 highScore: state.highScore,
-                currentLevel: state.level,
+                currentLevel: 1, // User requested strict reset on loss
                 currentScore: 0,
                 lives: 3
             });
