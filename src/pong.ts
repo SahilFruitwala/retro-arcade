@@ -3,7 +3,13 @@ import type { PongGameState } from "./types";
 export const WINNING_SCORE = 3;
 const AI_SPEED = 1; // Integer movement for smoothness
 
-export function initPong(width: number, height: number): PongGameState {
+// Paddle collision zones (distance from wall)
+const AI_PADDLE_X = 1;        // AI paddle at x = 1
+const AI_COLLISION_ZONE = 2;  // Ball collides with AI when x <= 2
+const PLAYER_PADDLE_OFFSET = 2;  // Player paddle is at width - 2
+const PLAYER_COLLISION_ZONE = 3; // Ball collides with player at width - 3
+
+export function initPong(width: number, height: number, highScore: number = 0): PongGameState {
   const paddleHeight = Math.max(5, Math.floor(height / 5));
   
   return {
@@ -17,6 +23,7 @@ export function initPong(width: number, height: number): PongGameState {
     ballVY: Math.random() > 0.5 ? 1 : -1, // Integer velocity
     playerScore: 0,
     aiScore: 0,
+    highScore,
     paused: false,
     gameOver: false,
     width,
@@ -50,18 +57,18 @@ export function updatePong(state: PongGameState): void {
   }
 
   // Ball collision with AI paddle (left side)
-  if (state.ballX <= 2 && state.ballX >= 1) {
+  if (state.ballX <= AI_COLLISION_ZONE && state.ballX >= AI_PADDLE_X) {
     if (state.ballY >= state.aiY && state.ballY < state.aiY + state.paddleHeight) {
       state.ballVX = Math.abs(state.ballVX); // Bounce right
-      state.ballX = 2; // Prevent sticking
+      state.ballX = AI_COLLISION_ZONE; // Prevent sticking
     }
   }
 
   // Ball collision with player paddle (right side)
-  if (state.ballX >= state.width - 3 && state.ballX <= state.width - 2) {
+  if (state.ballX >= state.width - PLAYER_COLLISION_ZONE && state.ballX <= state.width - PLAYER_PADDLE_OFFSET) {
     if (state.ballY >= state.playerY && state.ballY < state.playerY + state.paddleHeight) {
       state.ballVX = -Math.abs(state.ballVX); // Bounce left
-      state.ballX = state.width - 3; // Prevent sticking
+      state.ballX = state.width - PLAYER_COLLISION_ZONE; // Prevent sticking
     }
   }
 

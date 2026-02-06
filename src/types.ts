@@ -92,8 +92,8 @@ export interface TwentyFortyEightGameState {
 
 export interface PongGameState {
   // Paddles
-  playerY: number;      // Left paddle (player)
-  aiY: number;          // Right paddle (AI)
+  playerY: number;      // Right paddle (player)
+  aiY: number;          // Left paddle (AI)
   paddleHeight: number;
   paddleWidth: number;
   // Ball
@@ -104,6 +104,7 @@ export interface PongGameState {
   // Scores
   playerScore: number;
   aiScore: number;
+  highScore: number;    // Total player wins
   // Game state
   paused: boolean;
   gameOver: boolean;

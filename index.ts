@@ -5,7 +5,7 @@ import { initSnake, updateSnake, changeDirection } from "./src/snake";
 import { initFlappy, updateFlappy, jump } from "./src/flappy";
 import { init2048, move as move2048 } from "./src/2048";
 import { initPong, updatePong, movePlayerPaddle, WINNING_SCORE as PONG_WINNING_SCORE } from "./src/pong";
-import { loadGame, saveGame, resetProgress, saveSnakeHighScore, saveFlappyHighScore, saveTwentyFortyEightHighScore, getAllHighScores, loadThemeIndex, saveThemeIndex } from "./src/db";
+import { loadGame, saveGame, resetProgress, saveSnakeHighScore, saveFlappyHighScore, saveTwentyFortyEightHighScore, savePongHighScore, getAllHighScores, loadThemeIndex, saveThemeIndex } from "./src/db";
 import { getCurrentTheme, setTheme, nextTheme, getThemeNames, type Theme } from "./src/theme";
 
 // Load saved theme on startup
@@ -50,6 +50,7 @@ let hasSavedFlappyScore = false;
 let twentyFortyEightState: TwentyFortyEightGameState | null = null;
 let hasSaved2048Score = false;
 let pongState: PongGameState | null = null;
+let hasSavedPongScore = false;
 
 // Helper to save game state (only for Space Invaders currently)
 function doSaveGame(): void {
@@ -305,19 +306,6 @@ function centerText(text: string, width: number): string {
 }
 
 // ----------------------------------------------------------------
-// MENU LOGIC
-// ----------------------------------------------------------------
-
-function renderMenu() {
-    // No-op: Select component handles its own rendering
-}
-
-function handleMenuInput(sequence: string): boolean {
-    // Let Select component handle input
-    return false; 
-}
-
-// ----------------------------------------------------------------
 // LEADERBOARD
 // ----------------------------------------------------------------
 
@@ -356,6 +344,7 @@ function showLeaderboard() {
         { game: "SPACE INVADERS", score: scores.spaceInvaders },
         { game: "SNAKE", score: scores.snake },
         { game: "FLAPPY BIRD", score: scores.flappy },
+        { game: "PONG", score: scores.pong },
         { game: "2048", score: scores.twentyFortyEight },
     ];
 
@@ -499,8 +488,6 @@ function stopGame() {
     appMode = "MENU";
     currentGameId = "";
     initMenuUI();
-    initMenuUI();
-    // renderMenu(); // Not needed (Select component auto-renders on start/update)
 }
 
 // ----------------------------------------------------------------
@@ -522,9 +509,7 @@ function startSpaceInvaders() {
     if (savedGame.lives > 0) {
         startLevel = savedGame.currentLevel;
         startScore = savedGame.currentScore;
-    } else {
     }
-    
     invadersState = createInitialState(
         renderer.width, 
         renderer.height, 
@@ -1531,7 +1516,9 @@ function startPong() {
     const safeHeight = Math.max(15, renderer.height - 10);
     const safeWidth = Math.max(40, renderer.width - 6);
     
-    pongState = initPong(safeWidth, safeHeight);
+    const saved = loadGame();
+    pongState = initPong(safeWidth, safeHeight, saved.pongHighScore || 0);
+    hasSavedPongScore = false;
 
     // Header
     const header = new BoxRenderable(renderer, {
@@ -1633,12 +1620,20 @@ function renderPong() {
     const state = pongState;
     const theme = getCurrentTheme();
 
-    scoreText.content = `YOU ${state.playerScore}  -  ${state.aiScore} AI`;
+    scoreText.content = `YOU ${state.playerScore}  -  ${state.aiScore} AI  │  WINS: ${state.highScore}`;
 
     if (state.gameOver) {
-        const winner = state.playerScore >= 5 ? "YOU WIN! 🏆" : "AI WINS!";
+        const playerWon = state.playerScore >= PONG_WINNING_SCORE;
+        const winner = playerWon ? "YOU WIN! 🏆" : "AI WINS!";
         statusText.content = `${winner} │ R=Restart │ Q=Menu`;
-        statusText.fg = state.playerScore >= 5 ? theme.success : theme.danger;
+        statusText.fg = playerWon ? theme.success : theme.danger;
+        
+        // Save high score if player won and not already saved
+        if (playerWon && !hasSavedPongScore) {
+            state.highScore++;
+            savePongHighScore(state.highScore);
+            hasSavedPongScore = true;
+        }
     } else if (state.paused) {
         statusText.content = `⏸ PAUSED`;
         statusText.fg = theme.warning;
@@ -1715,7 +1710,8 @@ renderer.prependInputHandler((sequence: string) => {
     // Ctrl+C is handled by renderer now
 
     if (appMode === "MENU") {
-        return handleMenuInput(sequence);
+        // Menu input handled by SelectRenderable component
+        return false;
     } else if (appMode === "LEADERBOARD") {
         return handleLeaderboardInput(sequence);
     } else if (appMode === "SETTINGS") {

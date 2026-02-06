@@ -182,14 +182,11 @@ export function update(state: GameState): void {
     }
   }
   
-  // Update explosions
-  for (let i = state.explosions.length - 1; i >= 0; i--) {
-    const exp = state.explosions[i]!;
+  // Update explosions - increment frames and filter out finished ones
+  for (const exp of state.explosions) {
     exp.frame++;
-    if (exp.frame >= EXPLOSION_FRAMES.length) {
-      state.explosions.splice(i, 1);
-    }
   }
+  state.explosions = state.explosions.filter(exp => exp.frame < EXPLOSION_FRAMES.length);
   
   // Move UFO every 3 ticks
   if (state.tickCount % 3 === 0) {
@@ -204,23 +201,17 @@ export function update(state: GameState): void {
   }
 
   // Move player bullets EVERY tick (fast!)
-  for (let i = state.bullets.length - 1; i >= 0; i--) {
-    const bullet = state.bullets[i]!;
+  for (const bullet of state.bullets) {
     bullet.pos.y -= 1;
-    if (bullet.pos.y < 0) {
-      state.bullets.splice(i, 1);
-    }
   }
+  state.bullets = state.bullets.filter(b => b.pos.y >= 0);
   
   // Move enemy bullets every 3 ticks (slightly faster)
   if (state.tickCount % 3 === 0) {
-    for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
-      const bullet = state.enemyBullets[i]!;
+    for (const bullet of state.enemyBullets) {
       bullet.pos.y += 1;
-      if (bullet.pos.y >= state.height) {
-        state.enemyBullets.splice(i, 1);
-      }
     }
+    state.enemyBullets = state.enemyBullets.filter(b => b.pos.y < state.height);
   }
   
   // Enemy shoots every 8 ticks

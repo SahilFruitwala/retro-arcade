@@ -23,24 +23,31 @@ export function initSnake(width: number, height: number, highScore: number = 0):
 }
 
 function spawnFood(width: number, height: number, snake: Position[]): Position {
-  let food: Position;
-  let valid = false;
+  // Convert snake to a Set for O(1) lookup
+  const snakeSet = new Set(snake.map(s => `${s.x},${s.y}`));
   
-  // Try finding a random spot not on the snake
-  while (!valid) {
-    food = {
+  // Try random positions (max 100 attempts to avoid infinite loop)
+  for (let attempts = 0; attempts < 100; attempts++) {
+    const food = {
       x: Math.floor(Math.random() * (width - 2)) + 1,
       y: Math.floor(Math.random() * (height - 2)) + 1,
     };
     
-    // Check if on snake
-    const onSnake = snake.some(s => s.x === food.x && s.y === food.y);
-    if (!onSnake) {
-      valid = true;
+    if (!snakeSet.has(`${food.x},${food.y}`)) {
       return food;
     }
   }
-  return { x: 1, y: 1 }; // Fallback
+  
+  // Fallback: Find first empty cell deterministically
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      if (!snakeSet.has(`${x},${y}`)) {
+        return { x, y };
+      }
+    }
+  }
+  
+  return { x: 1, y: 1 }; // Ultimate fallback
 }
 
 export function updateSnake(state: SnakeGameState): void {

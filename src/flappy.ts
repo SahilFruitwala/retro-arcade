@@ -55,15 +55,8 @@ export function updateFlappy(state: FlappyGameState): void {
   // Update Pipes
   const birdX = Math.floor(state.width / 4);
 
-  for (let i = state.pipes.length - 1; i >= 0; i--) {
-    const pipe = state.pipes[i]!;
+  for (const pipe of state.pipes) {
     pipe.x -= PIPE_SPEED;
-
-    // Remove if off screen
-    if (pipe.x < -4) {
-      state.pipes.splice(i, 1);
-      continue;
-    }
 
     // Score counting
     if (!pipe.passed && pipe.x < birdX) {
@@ -83,6 +76,9 @@ export function updateFlappy(state: FlappyGameState): void {
         }
     }
   }
+  
+  // Remove pipes that are off screen
+  state.pipes = state.pipes.filter(pipe => pipe.x >= -4);
 
   // Ground/Ceiling Collision
   if (state.birdY < 0 || state.birdY >= state.height) {

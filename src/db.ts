@@ -61,6 +61,13 @@ try {
   // Ignore
 }
 
+// Migration: Add pong_high_score if missing
+try {
+  db.run("ALTER TABLE game_save ADD COLUMN pong_high_score INTEGER DEFAULT 0");
+} catch (e) {
+  // Ignore
+}
+
 export interface SavedGame {
   highScore: number;
   currentLevel: number;
@@ -69,16 +76,17 @@ export interface SavedGame {
   snakeHighScore?: number;
   flappyHighScore?: number;
   twentyFortyEightHighScore?: number;
+  pongHighScore?: number;
 }
 
 export function loadGame(): SavedGame {
   const row = db.query(`
-    SELECT high_score, current_level, current_score, lives, snake_high_score, flappy_high_score, twenty_forty_eight_high_score
+    SELECT high_score, current_level, current_score, lives, snake_high_score, flappy_high_score, twenty_forty_eight_high_score, pong_high_score
     FROM game_save WHERE id = 1
-  `).get() as { high_score: number; current_level: number; current_score: number; lives: number; snake_high_score: number; flappy_high_score: number; twenty_forty_eight_high_score: number } | null;
+  `).get() as { high_score: number; current_level: number; current_score: number; lives: number; snake_high_score: number; flappy_high_score: number; twenty_forty_eight_high_score: number; pong_high_score: number } | null;
   
   if (!row) {
-    return { highScore: 0, currentLevel: 1, currentScore: 0, lives: 3, snakeHighScore: 0, flappyHighScore: 0, twentyFortyEightHighScore: 0 };
+    return { highScore: 0, currentLevel: 1, currentScore: 0, lives: 3, snakeHighScore: 0, flappyHighScore: 0, twentyFortyEightHighScore: 0, pongHighScore: 0 };
   }
   
   return {
@@ -89,6 +97,7 @@ export function loadGame(): SavedGame {
     snakeHighScore: row.snake_high_score || 0,
     flappyHighScore: row.flappy_high_score || 0,
     twentyFortyEightHighScore: row.twenty_forty_eight_high_score || 0,
+    pongHighScore: row.pong_high_score || 0,
   };
 }
 
@@ -116,6 +125,10 @@ export function saveTwentyFortyEightHighScore(score: number): void {
     db.run(`UPDATE game_save SET twenty_forty_eight_high_score = ?1 WHERE id = 1`, [score]);
 }
 
+export function savePongHighScore(score: number): void {
+    db.run(`UPDATE game_save SET pong_high_score = ?1 WHERE id = 1`, [score]);
+}
+
 export function resetProgress(): void {
   db.run(`
     UPDATE game_save 
@@ -129,6 +142,7 @@ export interface AllHighScores {
   snake: number;
   flappy: number;
   twentyFortyEight: number;
+  pong: number;
 }
 
 export function getAllHighScores(): AllHighScores {
@@ -138,6 +152,7 @@ export function getAllHighScores(): AllHighScores {
     snake: saved.snakeHighScore || 0,
     flappy: saved.flappyHighScore || 0,
     twentyFortyEight: saved.twentyFortyEightHighScore || 0,
+    pong: saved.pongHighScore || 0,
   };
 }
 
