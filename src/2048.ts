@@ -9,6 +9,7 @@ export function init2048(width: number, height: number, highScore: number = 0): 
     highScore,
     gameOver: false,
     won: false,
+    paused: false,
     width,
     height,
   };

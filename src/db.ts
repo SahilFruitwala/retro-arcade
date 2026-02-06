@@ -54,6 +54,13 @@ try {
   // Ignore
 }
 
+// Migration: Add theme_index if missing
+try {
+  db.run("ALTER TABLE game_save ADD COLUMN theme_index INTEGER DEFAULT 0");
+} catch (e) {
+  // Ignore
+}
+
 export interface SavedGame {
   highScore: number;
   currentLevel: number;
@@ -115,4 +122,30 @@ export function resetProgress(): void {
     SET current_level = 1, current_score = 0, lives = 3, updated_at = CURRENT_TIMESTAMP
     WHERE id = 1
   `);
+}
+
+export interface AllHighScores {
+  spaceInvaders: number;
+  snake: number;
+  flappy: number;
+  twentyFortyEight: number;
+}
+
+export function getAllHighScores(): AllHighScores {
+  const saved = loadGame();
+  return {
+    spaceInvaders: saved.highScore,
+    snake: saved.snakeHighScore || 0,
+    flappy: saved.flappyHighScore || 0,
+    twentyFortyEight: saved.twentyFortyEightHighScore || 0,
+  };
+}
+
+export function loadThemeIndex(): number {
+  const row = db.query(`SELECT theme_index FROM game_save WHERE id = 1`).get() as { theme_index: number } | null;
+  return row?.theme_index || 0;
+}
+
+export function saveThemeIndex(index: number): void {
+  db.run(`UPDATE game_save SET theme_index = ?1 WHERE id = 1`, [index]);
 }

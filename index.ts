@@ -4,7 +4,11 @@ import { createInitialState, movePlayer, shoot, update, getExplosionChar, getShi
 import { initSnake, updateSnake, changeDirection } from "./src/snake";
 import { initFlappy, updateFlappy, jump } from "./src/flappy";
 import { init2048, move as move2048 } from "./src/2048";
-import { loadGame, saveGame, resetProgress, saveSnakeHighScore, saveFlappyHighScore, saveTwentyFortyEightHighScore } from "./src/db";
+import { loadGame, saveGame, resetProgress, saveSnakeHighScore, saveFlappyHighScore, saveTwentyFortyEightHighScore, getAllHighScores, loadThemeIndex, saveThemeIndex } from "./src/db";
+import { getCurrentTheme, setTheme, nextTheme, getThemeNames, type Theme } from "./src/theme";
+
+// Load saved theme on startup
+setTheme(loadThemeIndex());
 
 const renderer = await createCliRenderer({
   exitOnCtrlC: true, // Let OpenTUI handle Ctrl+C to ensure it works in binaries
@@ -12,7 +16,7 @@ const renderer = await createCliRenderer({
 });
 
 // App Types
-type AppMode = "MENU" | "GAME";
+type AppMode = "MENU" | "GAME" | "LEADERBOARD" | "SETTINGS";
 
 interface GameOption {
   id: string;
@@ -24,7 +28,9 @@ const GAMES: GameOption[] = [
   { id: "space-invaders", name: "SPACE INVADERS", enabled: true },
   { id: "snake", name: "SNAKE", enabled: true },
   { id: "flappy", name: "FLAPPY BIRD", enabled: true },
-  { id: "2048", name: "2048", enabled: true }
+  { id: "2048", name: "2048", enabled: true },
+  { id: "leaderboard", name: "HIGH SCORES", enabled: true },
+  { id: "settings", name: "SETTINGS", enabled: true }
 ];
 
 // App State
@@ -79,14 +85,15 @@ let gameContentLines: TextRenderable[] = []; // Replaces individual text lines f
 // Initialize Global UI Wrapper
 function initContainer() {
     if (container) container.destroy();
+    const theme = getCurrentTheme();
 
     container = new BoxRenderable(renderer, {
         id: "app-container",
         flexDirection: "column",
         borderStyle: "double",
-        borderColor: "#00FF00",
+        borderColor: theme.border,
         padding: 1,
-        backgroundColor: "#000000",
+        backgroundColor: theme.background,
     });
 
     // We'll add children dynamically based on mode
@@ -95,6 +102,7 @@ function initContainer() {
 
 function initMenuUI() {
     initContainer();
+    const theme = getCurrentTheme();
     
     // Center layout for menu
     container.justifyContent = "center";
@@ -103,7 +111,7 @@ function initMenuUI() {
     titleText = new TextRenderable(renderer, {
         id: "title",
         content: "★ RETRO ARCADE ★",
-        fg: "#00FF00",
+        fg: theme.text,
     });
     container.add(titleText);
 
@@ -114,29 +122,35 @@ function initMenuUI() {
     container.add(new TextRenderable(renderer, {
         id: "subtitle",
         content: "CHOOSE YOUR GAME",
-        fg: "#FFFFFF"
+        fg: theme.textHighlight
     }));
     container.add(new TextRenderable(renderer, { id: "spacer2", content: " " }));
 
     const options = GAMES.map(g => ({
         name: g.name,
-        description: g.enabled ? "Press Enter" : "Coming Soon",
+        description: " ", // Empty line for spacing
         value: g.id
     }));
 
     gameSelect = new SelectRenderable(renderer, {
         id: "game-select",
         width: 40,
-        height: 12, // Increased to show all 4 games (2 lines per option)
+        height: 20, // More height for spacing
         options: options,
         // Theme
-        backgroundColor: "#111111",
-        selectedBackgroundColor: "#006600", // Darker green for contrast
-        selectedTextColor: "#FFFFFF"       // White text
+        backgroundColor: theme.background,
+        selectedBackgroundColor: theme.success,
+        selectedTextColor: theme.background
     });
 
     gameSelect.on(SelectRenderableEvents.ITEM_SELECTED, (index, option) => {
-        if (option.value) startGame(option.value);
+        if (option.value === "leaderboard") {
+            showLeaderboard();
+        } else if (option.value === "settings") {
+            showSettings();
+        } else if (option.value) {
+            startGame(option.value);
+        }
     });
 
     container.add(gameSelect);
@@ -146,7 +160,7 @@ function initMenuUI() {
      const instructions = new TextRenderable(renderer, {
         id: "menu-help",
         content: "\n" + "↑/↓ SELECT   ENTER START   CTRL+C EXIT",
-        fg: "#555555"
+        fg: theme.textMuted
     });
     container.add(instructions);
 }
@@ -186,7 +200,101 @@ let snakeBodyTexts: TextRenderable[] = [];
 let snakeFruitBox: BoxRenderable;
 let snakeFruitText: TextRenderable;
 
+// ----------------------------------------------------------------
+// UNIFIED PAUSE MENU
+// ----------------------------------------------------------------
 
+let pauseMenuOverlay: BoxRenderable | null = null;
+let pauseMenuSelect: SelectRenderable | null = null;
+let pauseMenuSelection = 0; // 0=Resume, 1=Restart, 2=Quit
+
+function showPauseMenu() {
+    if (pauseMenuOverlay) return; // Already visible
+    const theme = getCurrentTheme();
+
+    pauseMenuOverlay = new BoxRenderable(renderer, {
+        id: "pause-overlay",
+        position: "absolute",
+        top: Math.floor(renderer.height / 2) - 5,
+        left: Math.floor(renderer.width / 2) - 15,
+        width: 30,
+        height: 11,
+        borderStyle: "double",
+        borderColor: theme.warning,
+        backgroundColor: theme.background,
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 1,
+    });
+
+    pauseMenuOverlay.add(new TextRenderable(renderer, {
+        id: "pause-title",
+        content: "⏸ PAUSED",
+        fg: theme.warning,
+    }));
+    pauseMenuOverlay.add(new TextRenderable(renderer, { id: "pause-spacer", content: " " }));
+
+    const options = [
+        { name: "▶ RESUME", description: "", value: "resume" },
+        { name: "↺ RESTART", description: "", value: "restart" },
+        { name: "✖ QUIT TO MENU", description: "", value: "quit" },
+    ];
+
+    pauseMenuSelect = new SelectRenderable(renderer, {
+        id: "pause-select",
+        width: 20,
+        height: 6,
+        options: options,
+        backgroundColor: theme.background,
+        selectedBackgroundColor: theme.warning,
+        selectedTextColor: theme.background,
+    });
+
+    pauseMenuSelect.on(SelectRenderableEvents.ITEM_SELECTED, (index, option) => {
+        handlePauseMenuAction(option.value as string);
+    });
+
+    pauseMenuOverlay.add(pauseMenuSelect);
+    renderer.root.add(pauseMenuOverlay);
+    pauseMenuSelect.focus();
+}
+
+function hidePauseMenu() {
+    if (pauseMenuOverlay) {
+        pauseMenuOverlay.destroy();
+        pauseMenuOverlay = null;
+        pauseMenuSelect = null;
+    }
+}
+
+function handlePauseMenuAction(action: string) {
+    hidePauseMenu();
+
+    if (action === "resume") {
+        // Unpause current game
+        if (currentGameId === "space-invaders" && invadersState) invadersState.paused = false;
+        if (currentGameId === "snake" && snakeState) snakeState.paused = false;
+        if (currentGameId === "flappy" && flappyState) flappyState.paused = false;
+        // 2048 doesn't have paused state currently
+    } else if (action === "restart") {
+        // Restart current game
+        startGame(currentGameId);
+    } else if (action === "quit") {
+        stopGame();
+    }
+}
+
+function handlePauseMenuInput(sequence: string): boolean {
+    if (!pauseMenuOverlay) return false;
+    // ESC key also resumes
+    if (sequence === "\x1b" || sequence === "p" || sequence === "P") {
+        handlePauseMenuAction("resume");
+        return true;
+    }
+    // Let SelectRenderable handle arrow/enter keys
+    return false;
+}
 
 function centerText(text: string, width: number): string {
   const padding = Math.max(0, Math.floor((width - text.length) / 2));
@@ -204,6 +312,149 @@ function renderMenu() {
 function handleMenuInput(sequence: string): boolean {
     // Let Select component handle input
     return false; 
+}
+
+// ----------------------------------------------------------------
+// LEADERBOARD
+// ----------------------------------------------------------------
+
+let settingsSelect: SelectRenderable;
+
+function showLeaderboard() {
+    appMode = "LEADERBOARD";
+    initContainer();
+    const theme = getCurrentTheme();
+
+    container.justifyContent = "center";
+    container.alignItems = "center";
+
+    // Title
+    container.add(new TextRenderable(renderer, {
+        id: "lb-title",
+        content: "🏆 HIGH SCORES 🏆",
+        fg: theme.text,
+    }));
+    container.add(new TextRenderable(renderer, { id: "lb-spacer1", content: " " }));
+
+    const scores = getAllHighScores();
+
+    // Leaderboard Box
+    const lbBox = new BoxRenderable(renderer, {
+        id: "lb-box",
+        width: 40,
+        borderStyle: "single",
+        borderColor: theme.border,
+        padding: 1,
+        flexDirection: "column",
+    });
+    container.add(lbBox);
+
+    const entries = [
+        { game: "SPACE INVADERS", score: scores.spaceInvaders },
+        { game: "SNAKE", score: scores.snake },
+        { game: "FLAPPY BIRD", score: scores.flappy },
+        { game: "2048", score: scores.twentyFortyEight },
+    ];
+
+    entries.forEach(e => {
+        const row = new BoxRenderable(renderer, {
+            flexDirection: "row",
+            justifyContent: "space-between",
+            width: "100%",
+        });
+        row.add(new TextRenderable(renderer, { content: e.game, fg: theme.textHighlight }));
+        row.add(new TextRenderable(renderer, { content: String(e.score).padStart(6, "0"), fg: theme.warning }));
+        lbBox.add(row);
+    });
+
+    container.add(new TextRenderable(renderer, { id: "lb-spacer2", content: " " }));
+    container.add(new TextRenderable(renderer, {
+        id: "lb-help",
+        content: "Press Q or ESC to return",
+        fg: theme.textMuted
+    }));
+}
+
+function handleLeaderboardInput(sequence: string): boolean {
+    if (sequence === "q" || sequence === "Q" || sequence === "\x1b") {
+        appMode = "MENU";
+        initMenuUI();
+        return true;
+    }
+    return false;
+}
+
+// ----------------------------------------------------------------
+// SETTINGS
+// ----------------------------------------------------------------
+
+function showSettings() {
+    appMode = "SETTINGS";
+    initContainer();
+    const theme = getCurrentTheme();
+
+    container.justifyContent = "center";
+    container.alignItems = "center";
+
+    // Title
+    container.add(new TextRenderable(renderer, {
+        id: "settings-title",
+        content: "⚙ SETTINGS ⚙",
+        fg: theme.text,
+    }));
+    container.add(new TextRenderable(renderer, { id: "settings-spacer1", content: " " }));
+
+    container.add(new TextRenderable(renderer, {
+        id: "settings-subtitle",
+        content: "SELECT THEME",
+        fg: theme.textHighlight,
+    }));
+    container.add(new TextRenderable(renderer, { id: "settings-spacer2", content: " " }));
+
+    const themeNames = getThemeNames();
+    const options = themeNames.map((name, i) => ({
+        name: name,
+        description: "",
+        value: String(i)
+    }));
+
+    settingsSelect = new SelectRenderable(renderer, {
+        id: "settings-select",
+        width: 30,
+        height: 10,
+        options: options,
+        backgroundColor: theme.background,
+        selectedBackgroundColor: theme.success,
+        selectedTextColor: theme.background,
+    });
+
+    settingsSelect.on(SelectRenderableEvents.ITEM_SELECTED, (index, option) => {
+        const themeIndex = Number(option.value);
+        setTheme(themeIndex);
+        saveThemeIndex(themeIndex); // Persist to database
+        // Refresh settings screen with new theme
+        showSettings();
+    });
+
+    container.add(settingsSelect);
+    settingsSelect.focus();
+
+    container.add(new TextRenderable(renderer, { id: "settings-spacer3", content: " " }));
+    container.add(new TextRenderable(renderer, {
+        id: "settings-help",
+        content: "ENTER to apply │ Q/ESC to return",
+        fg: theme.textMuted
+    }));
+}
+
+function handleSettingsInput(sequence: string): boolean {
+    if (sequence === "q" || sequence === "Q" || sequence === "\x1b") {
+        appMode = "MENU";
+        initMenuUI();
+        return true;
+    }
+    // Let SelectRenderable handle other input
+    return false;
 }
 
 // ----------------------------------------------------------------
@@ -599,9 +850,13 @@ function handleSpaceInvadersInput(sequence: string): boolean {
         return true;
     }
     if (sequence === "p" || sequence === "P") {
-        state.paused = !state.paused;
-        if (state.paused) doSaveGame();
-        renderSpaceInvaders();
+        if (state.paused) {
+            // Already paused with menu visible - let pause menu handle it
+            return handlePauseMenuInput(sequence);
+        }
+        state.paused = true;
+        doSaveGame();
+        showPauseMenu();
         return true;
     }
     if (state.gameOver || state.won || state.paused) return false;
@@ -798,8 +1053,11 @@ function handleSnakeInput(sequence: string): boolean {
         return true;
     }
      if (sequence === "p" || sequence === "P") {
-        state.paused = !state.paused;
-        renderSnake();
+        if (state.paused) {
+            return handlePauseMenuInput(sequence);
+        }
+        state.paused = true;
+        showPauseMenu();
         return true;
     }
 
@@ -1014,7 +1272,16 @@ function handleFlappyInput(sequence: string): boolean {
         return true;
     }
 
-    if (state.gameOver) return false;
+    if (sequence === "p" || sequence === "P") {
+        if (state.paused) {
+            return handlePauseMenuInput(sequence);
+        }
+        state.paused = true;
+        showPauseMenu();
+        return true;
+    }
+
+    if (state.gameOver || state.paused) return false;
 
     if (sequence === " " || sequence === "\u001b[A") { // Space or Up
         jump(state);
@@ -1211,7 +1478,16 @@ function handle2048Input(sequence: string): boolean {
         return true;
     }
 
-    if (state.gameOver) return false;
+    if (sequence === "p" || sequence === "P") {
+        if (state.paused) {
+            return handlePauseMenuInput(sequence);
+        }
+        state.paused = true;
+        showPauseMenu();
+        return true;
+    }
+
+    if (state.gameOver || state.paused) return false;
 
     let moved = false;
     if (sequence === "\u001b[A" || sequence === "w" || sequence === "W") { // Up
@@ -1257,7 +1533,11 @@ renderer.prependInputHandler((sequence: string) => {
 
     if (appMode === "MENU") {
         return handleMenuInput(sequence);
-    } else {
+    } else if (appMode === "LEADERBOARD") {
+        return handleLeaderboardInput(sequence);
+    } else if (appMode === "SETTINGS") {
+        return handleSettingsInput(sequence);
+    } else if (appMode === "GAME") {
         if (currentGameId === "space-invaders") return handleSpaceInvadersInput(sequence);
         if (currentGameId === "snake") return handleSnakeInput(sequence);
         if (currentGameId === "flappy") return handleFlappyInput(sequence);

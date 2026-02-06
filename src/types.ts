@@ -85,6 +85,7 @@ export interface TwentyFortyEightGameState {
   highScore: number;
   gameOver: boolean;
   won: boolean;
+  paused: boolean;
   width: number; // For rendering
   height: number;
 }
