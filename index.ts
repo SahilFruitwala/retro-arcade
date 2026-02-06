@@ -176,6 +176,12 @@ let flappyGameContainer: BoxRenderable;
 let flappyBirdBox: BoxRenderable;
 let flappyPipeBoxes: BoxRenderable[] = []; // Pool
 
+// Snake Component Refs
+let snakeGameContainer: BoxRenderable;
+let snakeBodyBoxes: BoxRenderable[] = []; // Pool
+let snakeBodyTexts: TextRenderable[] = []; 
+let snakeFruitBox: BoxRenderable;
+let snakeFruitText: TextRenderable;
 
 
 
@@ -555,165 +561,149 @@ function handleSpaceInvadersInput(sequence: string): boolean {
 // ----------------------------------------------------------------
 
 function startSnake() {
-    initContainer();
-    // Snake setup: width is half of renderer width (minus borders) because of double-width chars
-    const availableWidth = Math.floor((renderer.width - 2) / 2); // 2 chars per cell
-    const availableHeight = renderer.height - 6; // Title + Score + Border = ~6 lines
-    
-    // Load High Score
-    const saved = loadGame();
-    snakeState = initSnake(availableWidth, availableHeight, saved.snakeHighScore); 
-    hasSavedSnakeScore = false;
+  initContainer();
+  snakeState = initSnake(renderer.width, renderer.height);
+  // Correctly load high score
+  const saved = loadGame(); 
+  snakeState.highScore = saved.snakeHighScore || 0;
+  hasSavedSnakeScore = false;
 
-    // Build UI
-    const header = new BoxRenderable(renderer, {
-        flexDirection: "column",
-        alignItems: "center",
-        width: "100%",
-        marginBottom: 1
-    });
-    container.add(header);
+  // Header
+  const header = new BoxRenderable(renderer, {
+      flexDirection: "column",
+      alignItems: "center",
+      width: "100%",
+      marginBottom: 1
+  });
+  container.add(header);
 
-    titleText = new TextRenderable(renderer, {
-        id: "game-title",
-        content: "🐍 S N A K E 🐍",
-        fg: "#00FF00",
-    });
-    header.add(titleText);
+  titleText = new TextRenderable(renderer, {
+      id: "game-title",
+      content: "🐍 S N A K E 🐍",
+      fg: "#00FF00",
+  });
+  header.add(titleText);
 
-    const statsBar = new BoxRenderable(renderer, {
-        flexDirection: "row",
-        justifyContent: "center",
-        width: "100%"
-    });
-    container.add(statsBar);
+  // Stats
+  const statsBar = new BoxRenderable(renderer, {
+      flexDirection: "row",
+      justifyContent: "center",
+      width: "100%",
+      marginBottom: 1
+  });
+  container.add(statsBar);
 
-    scoreText = new TextRenderable(renderer, {
-        id: "score",
-        content: "",
-        fg: "#FFFFFF",
-    });
-    statsBar.add(scoreText);
+  scoreText = new TextRenderable(renderer, {
+      id: "score",
+      content: "",
+      fg: "#FFFFFF",
+  });
+  statsBar.add(scoreText);
+  
+  // Game Area
+  snakeGameContainer = new BoxRenderable(renderer, {
+      id: "snake-world",
+      width: "100%",
+      height: snakeState.height,
+  });
+  container.add(snakeGameContainer);
 
-    // Game Area (Centered)
-    const gameArea = new BoxRenderable(renderer, {
-        flexDirection: "column",
-        alignItems: "center",
-        width: "100%"
-    });
-    container.add(gameArea);
+  // Border Top
+  snakeGameContainer.add(new TextRenderable(renderer, { id: "border-top", content: "═".repeat(renderer.width), fg: "#00FF00" }));
 
-    borderTopLine = new TextRenderable(renderer, { id: "border-top", content: " " });
-    gameArea.add(borderTopLine);
-    
-    gameContentLines = [];
-    for (let i = 0; i < snakeState.height; i++) {
-        const line = new TextRenderable(renderer, {
-            id: `line-${i}`,
-            content: "",
-            fg: "#FFFFFF",
-        });
-        gameContentLines.push(line);
-        gameArea.add(line);
-    }
-    
-    borderBottomLine = new TextRenderable(renderer, { id: "border-bottom", content: " " });
-    gameArea.add(borderBottomLine);
-    
-    // Footer
-    const footer = new BoxRenderable(renderer, {
-        flexDirection: "row",
-        justifyContent: "center",
-        width: "100%",
-        marginTop: 1
-    });
-    container.add(footer);
+  // Pools
+  snakeBodyBoxes = [];
+  snakeBodyTexts = [];
+  
+  // Fruit
+  snakeFruitBox = new BoxRenderable(renderer, {
+      position: "absolute",
+      width: 1,
+      height: 1,
+      backgroundColor: "#FF0000",
+      top: -100 // Hide initially
+  });
+  snakeFruitText = new TextRenderable(renderer, { content: "❤", fg: "#FFFFFF" });
+  snakeFruitBox.add(snakeFruitText);
+  snakeGameContainer.add(snakeFruitBox);
 
-    statusText = new TextRenderable(renderer, {
-        id: "status",
-        content: "ARROWS TO MOVE │ R RESTART │ Q MENU",
-        fg: "#555555",
-    });
-    footer.add(statusText);
+  // Footer
+  const footer = new BoxRenderable(renderer, {
+      flexDirection: "row",
+      justifyContent: "center",
+      width: "100%",
+      marginTop: 1
+  });
+  container.add(footer);
 
-    renderSnake();
+  statusText = new TextRenderable(renderer, {
+      id: "status",
+      content: "",
+      fg: "#555555",
+  });
+  footer.add(statusText);
+
+  renderSnake();
 }
 
 function renderSnake() {
-    if (renderer.isDestroyed || !snakeState) return;
-    const state = snakeState;
-    const width = renderer.width;
+  if (renderer.isDestroyed || !snakeState || !snakeGameContainer) return;
+  const state = snakeState;
+  
+  scoreText.content = `SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`;
 
-    scoreText.content = `SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`;
+  if (state.gameOver) {
+      statusText.content = `☠ GAME OVER - SCORE: ${state.score} │ R=Restart │ Q=Menu`;
+      statusText.fg = "#FF0000";
+  } else {
+      statusText.content = `ARROWS move │ Q MENU`;
+      statusText.fg = "#555555";
+  }
 
-    // Status Update
-    const hi = state.highScore;
-    if (state.gameOver) {
-        statusText.content = `☠ GAME OVER - SCORE: ${state.score} - HI: ${hi} │ R=Restart │ Q=Menu`;
-        statusText.fg = "#FF0000";
-    } else if (state.paused) {
-        statusText.content = `HI: ${hi} │ ⏸ PAUSED - P=Continue`;
-        statusText.fg = "#FFFF00";
-    } else {
-        statusText.content = `HI: ${hi} │ ARROWS TO MOVE │ P PAUSE │ R RESTART │ Q MENU`;
-        statusText.fg = "#555555";
-    }
+  // Sync Fruit
+  snakeFruitBox.top = state.food.y;
+  snakeFruitBox.left = state.food.x;
 
-    // Grid Rendering
-    // Reverting ANSI colors as they break the renderer layout.
-    // Using distinct characters for visibility.
-    // Double width '[]' for snake, '@@' for food.
+  // Sync Body
+  // Ensure enough boxes
+  while (snakeBodyBoxes.length < state.snake.length) {
+      const box = new BoxRenderable(renderer, {
+          position: "absolute",
+          width: 1,
+          height: 1,
+          backgroundColor: "#00FF00" 
+      });
+      // Maybe different char for head?
+      const txt = new TextRenderable(renderer, { content: "", fg: "#000000" });
+      box.add(txt);
+      snakeBodyBoxes.push(box);
+      snakeBodyTexts.push(txt);
+      snakeGameContainer.add(box);
+  }
 
-    const borderChar = "═";
-    const sideBorder = "║";
-    const cornerTL = "╔";
-    const cornerTR = "╗";
-    const cornerBL = "╚";
-    const cornerBR = "╝";
+  for (let i = 0; i < snakeBodyBoxes.length; i++) {
+        const box = snakeBodyBoxes[i]!;
+        const text = snakeBodyTexts[i]!; 
 
-    // Prepare grid strings
-    // Calculate total border width based on snake logical width
-    // Each logical cell is 2 chars wide.
-    const innerWidth = state.width * 2; 
-
-    // Top Border
-    // No centerText needed
-    const tb = `${cornerTL}${borderChar.repeat(innerWidth)}${cornerTR}`;
-    if (borderTopLine) borderTopLine.content = tb;
-    
-    // Main Rows
-    for (let y = 0; y < state.height; y++) {
-        let rowStr = "";
-        for (let x = 0; x < state.width; x++) {
-            let isSnake = false;
-            let isHead = false;
+        if (i < state.snake.length) {
+            const segment = state.snake[i]!;
+            box.top = segment.y;
+            box.left = segment.x;
             
-            for (let i = 0; i < state.snake.length; i++) {
-                if (state.snake[i]!.x === x && state.snake[i]!.y === y) {
-                    isSnake = true;
-                    if (i === 0) isHead = true;
-                    break;
-                }
-            }
-            
-            if (isSnake) {
-                rowStr += isHead ? "██" : "▒▒"; // Solid block for head, shaded for body
-            } else if (state.food.x === x && state.food.y === y) {
-                rowStr += "@@"; 
+            // Visuals
+            if (i === 0) { // Head
+                box.backgroundColor = "#00FF00"; // Bright Green
+                text.content = "O";
+                text.fg = "#004400";
             } else {
-                rowStr += " ."; 
+                box.backgroundColor = "#00AA00"; // Darker Green
+                text.content = "•"; 
+                text.fg = "#002200";
             }
+        } else {
+            box.top = -100; // Hide
         }
-        
-        if (gameContentLines[y]) {
-            // No centerText needed
-            gameContentLines[y]!.content = `${sideBorder}${rowStr}${sideBorder}`;
-        }
-    }
-    
-    // Bottom Border
-    const bb = `${cornerBL}${borderChar.repeat(innerWidth)}${cornerBR}`;
-    if (borderBottomLine) borderBottomLine.content = bb;
+  }
 }
 
 // Helper Refs for Snake
