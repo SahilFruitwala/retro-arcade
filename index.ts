@@ -2,7 +2,7 @@ import { createCliRenderer, TextRenderable, BoxRenderable } from "@opentui/core"
 import type { GameState, Entity, SnakeGameState } from "./src/types";
 import { createInitialState, movePlayer, shoot, update, getExplosionChar, getShieldChar } from "./src/game";
 import { initSnake, updateSnake, changeDirection } from "./src/snake";
-import { loadGame, saveGame, resetProgress } from "./src/db";
+import { loadGame, saveGame, resetProgress, saveSnakeHighScore } from "./src/db";
 
 const renderer = await createCliRenderer({
   exitOnCtrlC: false, // We'll handle it ourselves
@@ -31,7 +31,9 @@ let currentGameId = "";
 
 // Game States
 let invadersState: GameState | null = null;
+let hasSavedInvadersScore = false;
 let snakeState: SnakeGameState | null = null;
+let hasSavedSnakeScore = false;
 
 // Helper to save game state (only for Space Invaders currently)
 function doSaveGame(): void {
@@ -211,6 +213,7 @@ function startSpaceInvaders() {
     );
     invadersState.score = savedGame.currentScore;
     invadersState.lives = savedGame.lives;
+    hasSavedInvadersScore = false;
 
     // Build UI
     titleText = new TextRenderable(renderer, {
@@ -252,12 +255,7 @@ function startSpaceInvaders() {
     });
     container.add(groundLine);
 
-    helpText = new TextRenderable(renderer, {
-        id: "help",
-        content: centerText("← → MOVE │ SPACE FIRE │ P PAUSE │ Q MENU", invadersState.width),
-        fg: "#555555",
-    });
-    container.add(helpText);
+    // helpText removed to merge with statusText for consistency
 
     statusText = new TextRenderable(renderer, {
         id: "status",
@@ -278,17 +276,19 @@ function renderSpaceInvaders(): void {
 
   levelText.content = centerText(`═══ LEVEL ${state.level} ═══`, state.width);
 
+  const hi = state.highScore;
   if (state.gameOver) {
-    statusText.content = centerText("☠ GAME OVER - R=Continue │ N=New Game │ Q=Menu", state.width);
+    statusText.content = centerText(`☠ GAME OVER - SCORE: ${state.score} - HI: ${hi} │ R=Restart │ N=New │ Q=Menu`, state.width);
     statusText.fg = "#FF0000";
   } else if (state.won) {
-    statusText.content = centerText(`★ LEVEL ${state.level} COMPLETE! - Press R for next level`, state.width);
+    statusText.content = centerText(`★ LEVEL COMPLETE! HI: ${hi} - R for next level`, state.width);
     statusText.fg = "#00FF00";
   } else if (state.paused) {
-    statusText.content = centerText("⏸ PAUSED (auto-saved) - Press P to continue", state.width);
+    statusText.content = centerText(`HI: ${hi} │ ⏸ PAUSED - P=Continue`, state.width);
     statusText.fg = "#FFFF00";
   } else {
-    statusText.content = "";
+    statusText.content = centerText(`HI: ${hi} │ ← → MOVE │ SPACE FIRE │ P PAUSE │ Q MENU`, state.width);
+    statusText.fg = "#555555";
   }
 
   const grid: string[][] = [];
@@ -406,7 +406,10 @@ function startSnake() {
     const availableWidth = Math.floor((renderer.width - 2) / 2); // 2 chars per cell
     const availableHeight = renderer.height - 6; // Title + Score + Border = ~6 lines
     
-    snakeState = initSnake(availableWidth, availableHeight); 
+    // Load High Score
+    const saved = loadGame();
+    snakeState = initSnake(availableWidth, availableHeight, saved.snakeHighScore); 
+    hasSavedSnakeScore = false;
 
     // Build UI
     titleText = new TextRenderable(renderer, {
@@ -463,14 +466,15 @@ function renderSnake() {
     scoreText.content = centerText(`SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`, width);
 
     // Status Update
+    const hi = state.highScore;
     if (state.gameOver) {
-        statusText.content = centerText("☠ GAME OVER - R=Restart │ Q=Menu", width);
+        statusText.content = centerText(`☠ GAME OVER - SCORE: ${state.score} - HI: ${hi} │ R=Restart │ Q=Menu`, width);
         statusText.fg = "#FF0000";
     } else if (state.paused) {
-        statusText.content = centerText("⏸ PAUSED - P=Continue", width);
+        statusText.content = centerText(`HI: ${hi} │ ⏸ PAUSED - P=Continue`, width);
         statusText.fg = "#FFFF00";
     } else {
-        statusText.content = centerText("ARROWS TO MOVE │ P PAUSE │ R RESTART │ Q MENU", width);
+        statusText.content = centerText(`HI: ${hi} │ ARROWS TO MOVE │ P PAUSE │ R RESTART │ Q MENU`, width);
         statusText.fg = "#555555";
     }
 
@@ -628,14 +632,23 @@ const gameLoopId = setInterval(() => {
             invadersState.highScore = invadersState.score;
           }
           update(invadersState);
+          if (invadersState.gameOver && !hasSavedInvadersScore) {
+              doSaveGame();
+              hasSavedInvadersScore = true;
+          }
           renderSpaceInvaders();
       } else if (currentGameId === "snake" && snakeState) {
-          // Slow down snake
+          // Snake Loop (slower tick)
           snakeTick++;
-          if (snakeTick % 3 === 0) { // Adjust speed
-             updateSnake(snakeState);
-             renderSnake();
+          if (snakeTick >= 3) { // Adjust speed
+              snakeTick = 0;
+              updateSnake(snakeState);
+              if (snakeState.gameOver && !hasSavedSnakeScore) {
+                  saveSnakeHighScore(snakeState.highScore);
+                  hasSavedSnakeScore = true;
+              }
           }
+          renderSnake();
       }
   }
 }, 50);
