@@ -1,4 +1,4 @@
-import { createCliRenderer, TextRenderable, BoxRenderable } from "@opentui/core";
+import { createCliRenderer, TextRenderable, BoxRenderable, SelectRenderable, SelectRenderableEvents } from "@opentui/core";
 import type { GameState, Entity, SnakeGameState, FlappyGameState, TwentyFortyEightGameState } from "./src/types";
 import { createInitialState, movePlayer, shoot, update, getExplosionChar, getShieldChar } from "./src/invaders";
 import { initSnake, updateSnake, changeDirection } from "./src/snake";
@@ -70,9 +70,10 @@ process.on("SIGTERM", () => {
 });
 
 // UI Components
+// UI Components
 let container: BoxRenderable;
 let titleText: TextRenderable;
-let menuText: TextRenderable; // For the menu list
+let gameSelect: SelectRenderable; // Replaces menuText
 let gameContentLines: TextRenderable[] = []; // Replaces individual text lines for flexibility
 
 // Initialize Global UI Wrapper
@@ -94,10 +95,14 @@ function initContainer() {
 
 function initMenuUI() {
     initContainer();
+    
+    // Center layout for menu
+    container.justifyContent = "center";
+    container.alignItems = "center";
 
     titleText = new TextRenderable(renderer, {
         id: "title",
-        content: centerText("★ RETRO ARCADE ★", renderer.width),
+        content: "★ RETRO ARCADE ★",
         fg: "#00FF00",
     });
     container.add(titleText);
@@ -105,17 +110,42 @@ function initMenuUI() {
     // Spacer
     container.add(new TextRenderable(renderer, { id: "spacer1", content: " " }));
 
-    menuText = new TextRenderable(renderer, {
-        id: "menu-list",
-        content: "",
-        fg: "#FFFFFF",
+    // Subtitle
+    container.add(new TextRenderable(renderer, {
+        id: "subtitle",
+        content: "CHOOSE YOUR GAME",
+        fg: "#FFFFFF"
+    }));
+    container.add(new TextRenderable(renderer, { id: "spacer2", content: " " }));
+
+    const options = GAMES.map(g => ({
+        name: g.name,
+        description: g.enabled ? "Press Enter" : "Coming Soon",
+        value: g.id
+    }));
+
+    gameSelect = new SelectRenderable(renderer, {
+        id: "game-select",
+        width: 40,
+        height: 6,
+        options: options,
+        // Theme
+        backgroundColor: "#111111",
+        selectedBackgroundColor: "#00FF00",
+        selectedTextColor: "#000000"
     });
-    container.add(menuText);
+
+    gameSelect.on(SelectRenderableEvents.ITEM_SELECTED, (index, option) => {
+        if (option.value) startGame(option.value);
+    });
+
+    container.add(gameSelect);
+    gameSelect.focus();
 
     // Instructions
      const instructions = new TextRenderable(renderer, {
         id: "menu-help",
-        content: "\n" + centerText("↑/↓ SELECT   ENTER START   CTRL+C EXIT", renderer.width),
+        content: "\n" + "↑/↓ SELECT   ENTER START   CTRL+C EXIT",
         fg: "#555555"
     });
     container.add(instructions);
@@ -138,45 +168,12 @@ function centerText(text: string, width: number): string {
 // ----------------------------------------------------------------
 
 function renderMenu() {
-    // Update Title
-    titleText.content = centerText("★ RETRO ARCADE ★", renderer.width);
-
-    // Update Menu List
-    const lines: string[] = [];
-    lines.push(centerText("CHOOSE YOUR GAME", renderer.width));
-    lines.push("");
-
-    GAMES.forEach((game, index) => {
-        const prefix = index === menuSelection ? " > " : "   ";
-        const suffix = index === menuSelection ? " < " : "   ";
-        const name = `${prefix}${game.name}${suffix}`;
-        lines.push(centerText(name, renderer.width));
-    });
-
-    menuText.content = lines.join("\n");
+    // No-op: Select component handles its own rendering
 }
 
 function handleMenuInput(sequence: string): boolean {
-    if (sequence === "\u001b[A" || sequence === "w" || sequence === "W") { // Up
-        menuSelection--;
-        if (menuSelection < 0) menuSelection = GAMES.length - 1;
-        renderMenu();
-        return true;
-    }
-    if (sequence === "\u001b[B" || sequence === "s" || sequence === "S") { // Down
-        menuSelection++;
-        if (menuSelection >= GAMES.length) menuSelection = 0;
-        renderMenu();
-        return true;
-    }
-    if (sequence === "\r" || sequence === "\n") { // Enter
-        const selected = GAMES[menuSelection];
-        if (selected && selected.enabled) {
-            startGame(selected.id);
-        }
-        return true;
-    }
-    return false;
+    // Let Select component handle input
+    return false; 
 }
 
 // ----------------------------------------------------------------
@@ -214,7 +211,8 @@ function stopGame() {
     appMode = "MENU";
     currentGameId = "";
     initMenuUI();
-    renderMenu();
+    initMenuUI();
+    // renderMenu(); // Not needed (Select component auto-renders on start/update)
 }
 
 // ----------------------------------------------------------------
@@ -235,26 +233,47 @@ function startSpaceInvaders() {
     hasSavedInvadersScore = false;
 
     // Build UI
+    const header = new BoxRenderable(renderer, {
+        flexDirection: "column",
+        alignItems: "center",
+        width: "100%",
+        marginBottom: 1
+    });
+    container.add(header);
+
     titleText = new TextRenderable(renderer, {
         id: "game-title",
-        content: centerText("★ S P A C E   I N V A D E R S ★", invadersState.width),
+        content: "★ S P A C E   I N V A D E R S ★",
         fg: "#00FF00",
     });
-    container.add(titleText);
+    header.add(titleText);
+
+    // Stats Bar
+    const statsBar = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        width: "100%",
+        paddingLeft: 4,
+        paddingRight: 4
+    });
+    container.add(statsBar);
 
     scoreText = new TextRenderable(renderer, {
         id: "score",
         content: "",
         fg: "#FFFFFF",
     });
-    container.add(scoreText);
+    statsBar.add(scoreText);
 
     levelText = new TextRenderable(renderer, {
         id: "level",
         content: "",
         fg: "#FFFF00",
     });
-    container.add(levelText);
+    statsBar.add(levelText);
+    
+    // Spacer
+    container.add(new TextRenderable(renderer, { id: "spacer-game", content: " " }));
 
     gameContentLines = [];
     for (let i = 0; i < invadersState.height; i++) {
@@ -276,12 +295,21 @@ function startSpaceInvaders() {
 
     // helpText removed to merge with statusText for consistency
 
+    // Footer (Status)
+    const footer = new BoxRenderable(renderer, {
+        flexDirection: "row", // or column
+        justifyContent: "center",
+        width: "100%",
+        marginTop: 1
+    });
+    container.add(footer);
+
     statusText = new TextRenderable(renderer, {
         id: "status",
         content: "",
         fg: "#FFFF00",
     });
-    container.add(statusText);
+    footer.add(statusText);
 
     renderSpaceInvaders();
 }
@@ -291,22 +319,22 @@ function renderSpaceInvaders(): void {
   const state = invadersState;
 
   const livesStr = "♥".repeat(state.lives) + "♡".repeat(Math.max(0, 3 - state.lives));
-  scoreText.content = centerText(`SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}    ${livesStr}`, state.width);
+  scoreText.content = `SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}    ${livesStr}`;
 
-  levelText.content = centerText(`═══ LEVEL ${state.level} ═══`, state.width);
+  levelText.content = `LEVEL ${state.level}`;
 
   const hi = state.highScore;
   if (state.gameOver) {
-    statusText.content = centerText(`☠ GAME OVER - SCORE: ${state.score} - HI: ${hi} │ R=Restart │ N=New │ Q=Menu`, state.width);
+    statusText.content = `☠ GAME OVER - SCORE: ${state.score} - HI: ${hi} │ R=Restart │ N=New │ Q=Menu`;
     statusText.fg = "#FF0000";
   } else if (state.won) {
-    statusText.content = centerText(`★ LEVEL COMPLETE! HI: ${hi} - R for next level`, state.width);
+    statusText.content = `★ LEVEL COMPLETE! HI: ${hi} - R for next level`;
     statusText.fg = "#00FF00";
   } else if (state.paused) {
-    statusText.content = centerText(`HI: ${hi} │ ⏸ PAUSED - P=Continue`, state.width);
+    statusText.content = `HI: ${hi} │ ⏸ PAUSED - P=Continue`;
     statusText.fg = "#FFFF00";
   } else {
-    statusText.content = centerText(`HI: ${hi} │ ← → MOVE │ SPACE FIRE │ P PAUSE │ Q MENU`, state.width);
+    statusText.content = `HI: ${hi} │ ← → MOVE │ SPACE FIRE │ P PAUSE │ Q MENU`;
     statusText.fg = "#555555";
   }
 
@@ -441,26 +469,47 @@ function startSnake() {
     hasSavedSnakeScore = false;
 
     // Build UI
+    const header = new BoxRenderable(renderer, {
+        flexDirection: "column",
+        alignItems: "center",
+        width: "100%",
+        marginBottom: 1
+    });
+    container.add(header);
+
     titleText = new TextRenderable(renderer, {
         id: "game-title",
-        content: centerText("🐍 S N A K E 🐍", renderer.width),
+        content: "🐍 S N A K E 🐍",
         fg: "#00FF00",
     });
-    container.add(titleText);
+    header.add(titleText);
+
+    const statsBar = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "center",
+        width: "100%"
+    });
+    container.add(statsBar);
 
     scoreText = new TextRenderable(renderer, {
         id: "score",
         content: "",
         fg: "#FFFFFF",
     });
-    container.add(scoreText);
+    statsBar.add(scoreText);
 
-    // Border Top
+    // Game Area (Centered)
+    const gameArea = new BoxRenderable(renderer, {
+        flexDirection: "column",
+        alignItems: "center",
+        width: "100%"
+    });
+    container.add(gameArea);
+
     borderTopLine = new TextRenderable(renderer, { id: "border-top", content: " " });
-    container.add(borderTopLine);
+    gameArea.add(borderTopLine);
     
     gameContentLines = [];
-    // We need 'height' lines for the game grid
     for (let i = 0; i < snakeState.height; i++) {
         const line = new TextRenderable(renderer, {
             id: `line-${i}`,
@@ -468,22 +517,28 @@ function startSnake() {
             fg: "#FFFFFF",
         });
         gameContentLines.push(line);
-        container.add(line);
+        gameArea.add(line);
     }
     
-    // Border Bottom
     borderBottomLine = new TextRenderable(renderer, { id: "border-bottom", content: " " });
-    container.add(borderBottomLine);
+    gameArea.add(borderBottomLine);
     
-    // Status text (instructions)
+    // Footer
+    const footer = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "center",
+        width: "100%",
+        marginTop: 1
+    });
+    container.add(footer);
+
     statusText = new TextRenderable(renderer, {
         id: "status",
-        content: centerText("ARROWS TO MOVE │ R RESTART │ Q MENU", renderer.width),
+        content: "ARROWS TO MOVE │ R RESTART │ Q MENU",
         fg: "#555555",
     });
-    container.add(statusText);
+    footer.add(statusText);
 
-    // Initial render call
     renderSnake();
 }
 
@@ -492,18 +547,18 @@ function renderSnake() {
     const state = snakeState;
     const width = renderer.width;
 
-    scoreText.content = centerText(`SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`, width);
+    scoreText.content = `SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`;
 
     // Status Update
     const hi = state.highScore;
     if (state.gameOver) {
-        statusText.content = centerText(`☠ GAME OVER - SCORE: ${state.score} - HI: ${hi} │ R=Restart │ Q=Menu`, width);
+        statusText.content = `☠ GAME OVER - SCORE: ${state.score} - HI: ${hi} │ R=Restart │ Q=Menu`;
         statusText.fg = "#FF0000";
     } else if (state.paused) {
-        statusText.content = centerText(`HI: ${hi} │ ⏸ PAUSED - P=Continue`, width);
+        statusText.content = `HI: ${hi} │ ⏸ PAUSED - P=Continue`;
         statusText.fg = "#FFFF00";
     } else {
-        statusText.content = centerText(`HI: ${hi} │ ARROWS TO MOVE │ P PAUSE │ R RESTART │ Q MENU`, width);
+        statusText.content = `HI: ${hi} │ ARROWS TO MOVE │ P PAUSE │ R RESTART │ Q MENU`;
         statusText.fg = "#555555";
     }
 
@@ -525,7 +580,8 @@ function renderSnake() {
     const innerWidth = state.width * 2; 
 
     // Top Border
-    const tb = centerText(`${cornerTL}${borderChar.repeat(innerWidth)}${cornerTR}`, width);
+    // No centerText needed
+    const tb = `${cornerTL}${borderChar.repeat(innerWidth)}${cornerTR}`;
     if (borderTopLine) borderTopLine.content = tb;
     
     // Main Rows
@@ -553,12 +609,13 @@ function renderSnake() {
         }
         
         if (gameContentLines[y]) {
-            gameContentLines[y]!.content = centerText(`${sideBorder}${rowStr}${sideBorder}`, width);
+            // No centerText needed
+            gameContentLines[y]!.content = `${sideBorder}${rowStr}${sideBorder}`;
         }
     }
     
     // Bottom Border
-    const bb = centerText(`${cornerBL}${borderChar.repeat(innerWidth)}${cornerBR}`, width);
+    const bb = `${cornerBL}${borderChar.repeat(innerWidth)}${cornerBR}`;
     if (borderBottomLine) borderBottomLine.content = bb;
 }
 
@@ -622,22 +679,45 @@ function startFlappy() {
     hasSavedFlappyScore = false;
 
     // Build UI
+    const header = new BoxRenderable(renderer, {
+        flexDirection: "column",
+        alignItems: "center",
+        width: "100%",
+        marginBottom: 1
+    });
+    container.add(header);
+
     titleText = new TextRenderable(renderer, {
         id: "game-title",
-        content: centerText("🐦 FLAPPY BIRD 🐦", safeWidth),
+        content: "🐦 FLAPPY BIRD 🐦",
         fg: "#FFFF00",
     });
-    container.add(titleText);
+    header.add(titleText);
+
+    const statsBar = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "center",
+        width: "100%"
+    });
+    container.add(statsBar);
 
     scoreText = new TextRenderable(renderer, {
         id: "score",
         content: "",
         fg: "#FFFFFF",
     });
-    container.add(scoreText);
+    statsBar.add(scoreText);
+
+    // Game Area
+    const gameArea = new BoxRenderable(renderer, {
+        flexDirection: "column",
+        alignItems: "center", // Center content
+        width: "100%"
+    });
+    container.add(gameArea);
 
     // Border Top
-    container.add(new TextRenderable(renderer, { id: "border-top", content: "─".repeat(safeWidth) }));
+    gameArea.add(new TextRenderable(renderer, { id: "border-top", content: "─".repeat(safeWidth) }));
 
     gameContentLines = [];
     for (let i = 0; i < flappyState.height; i++) {
@@ -647,15 +727,24 @@ function startFlappy() {
             fg: "#FFFFFF",
         });
         gameContentLines.push(line);
-        container.add(line);
+        gameArea.add(line);
     }
+
+    // Footer
+    const footer = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "center",
+        width: "100%",
+        marginTop: 1
+    });
+    container.add(footer);
 
     statusText = new TextRenderable(renderer, {
         id: "status",
         content: "",
         fg: "#555555",
     });
-    container.add(statusText);
+    footer.add(statusText);
 
     renderFlappy();
 }
@@ -666,13 +755,13 @@ function renderFlappy() {
     const width = state.width;
     const viewHeight = gameContentLines.length;
 
-    scoreText.content = centerText(`SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`, width);
+    scoreText.content = `SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`;
 
     if (state.gameOver) {
-        statusText.content = centerText(`☠ GAME OVER - SCORE: ${state.score} │ R=Restart │ Q=Menu`, width);
+        statusText.content = `☠ GAME OVER - SCORE: ${state.score} │ R=Restart │ Q=Menu`;
         statusText.fg = "#FF0000";
     } else {
-        statusText.content = centerText(`SPACE/UP to JUMP │ Q MENU`, width);
+        statusText.content = `SPACE/UP to JUMP │ Q MENU`;
         statusText.fg = "#555555";
     }
 
@@ -765,21 +854,45 @@ function start2048() {
     twentyFortyEightState = init2048(safeWidth, 4, saved.twentyFortyEightHighScore);
     hasSaved2048Score = false;
 
+    // Build UI
+    const header = new BoxRenderable(renderer, {
+        flexDirection: "column",
+        alignItems: "center",
+        width: "100%",
+        marginBottom: 1
+    });
+    container.add(header);
+
     titleText = new TextRenderable(renderer, {
         id: "game-title",
-        content: centerText("🔢 2 0 4 8 🔢", safeWidth),
+        content: "🔢 2 0 4 8 🔢",
         fg: "#FFFFFF",
     });
-    container.add(titleText);
+    header.add(titleText);
+
+    const statsBar = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "center",
+        width: "100%"
+    });
+    container.add(statsBar);
 
     scoreText = new TextRenderable(renderer, {
         id: "score",
         content: "",
         fg: "#FFFFFF",
     });
-    container.add(scoreText);
+    statsBar.add(scoreText);
 
     container.add(new TextRenderable(renderer, { id: "spacer", content: " " }));
+
+    // Game Area (Centered)
+    const gameArea = new BoxRenderable(renderer, {
+        flexDirection: "column",
+        alignItems: "center",
+        width: "100%"
+    });
+    container.add(gameArea);
 
     gameContentLines = [];
     for (let i = 0; i < 9; i++) {
@@ -789,15 +902,24 @@ function start2048() {
             fg: "#FFFFFF",
         });
         gameContentLines.push(line);
-        container.add(line);
+        gameArea.add(line);
     }
+
+    // Footer
+    const footer = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "center",
+        width: "100%",
+        marginTop: 1
+    });
+    container.add(footer);
 
     statusText = new TextRenderable(renderer, {
         id: "status",
         content: "",
         fg: "#555555",
     });
-    container.add(statusText);
+    footer.add(statusText);
 
     render2048();
 }
@@ -807,16 +929,16 @@ function render2048() {
     const state = twentyFortyEightState;
     const width = renderer.width;
 
-    scoreText.content = centerText(`SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`, width);
+    scoreText.content = `SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`;
 
     if (state.gameOver) {
-        statusText.content = centerText(`☠ GAME OVER - SCORE: ${state.score} │ R=Restart │ Q=Menu`, width);
+        statusText.content = `☠ GAME OVER - SCORE: ${state.score} │ R=Restart │ Q=Menu`;
         statusText.fg = "#FF0000";
     } else if (state.won) {
-        statusText.content = centerText(`🎉 YOU REACHED 2048! │ ARROWS CONTINUE │ Q=Menu`, width);
+        statusText.content = `🎉 YOU REACHED 2048! │ ARROWS CONTINUE │ Q=Menu`;
         statusText.fg = "#00FF00";
     } else {
-        statusText.content = centerText(`ARROWS TO SLIDE │ Q MENU`, width);
+        statusText.content = `ARROWS TO SLIDE │ Q MENU`;
         statusText.fg = "#555555";
     }
 
@@ -824,7 +946,7 @@ function render2048() {
     const lines: string[] = [];
     
     const border = "+------+------+------+------+";
-    lines.push(centerText(border, width));
+    lines.push(border);
     
     for (let r = 0; r < 4; r++) {
         let rowStr = "|";
@@ -833,8 +955,8 @@ function render2048() {
             const valStr = val === 0 ? "      " : val.toString().padStart(6, " ");
             rowStr += valStr + "|";
         }
-        lines.push(centerText(rowStr, width));
-        lines.push(centerText(border, width));
+        lines.push(rowStr);
+        lines.push(border);
     }
 
     for (let i = 0; i < lines.length; i++) {
@@ -886,7 +1008,7 @@ function handle2048Input(sequence: string): boolean {
 // Handle resize
 renderer.on("resize", () => {
     if (appMode === "MENU") {
-        renderMenu();
+        // Auto-handled by layout
     } else if (appMode === "GAME") {
         // Simple restart on resize for now to avoid broken state
          if (currentGameId === "space-invaders") startGame("space-invaders");
