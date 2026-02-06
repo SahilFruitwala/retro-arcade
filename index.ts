@@ -127,7 +127,7 @@ function initMenuUI() {
     gameSelect = new SelectRenderable(renderer, {
         id: "game-select",
         width: 40,
-        height: 6,
+        height: 12, // Increased to show all 4 games (2 lines per option)
         options: options,
         // Theme
         backgroundColor: "#111111",
@@ -157,6 +157,8 @@ let levelText: TextRenderable;
 let groundLine: TextRenderable;
 let helpText: TextRenderable;
 let statusText: TextRenderable;
+let tileBoxes: BoxRenderable[] = []; // References for 2048 tiles
+let tileTexts: TextRenderable[] = []; // Text nodes inside the tiles
 
 function centerText(text: string, width: number): string {
   const padding = Math.max(0, Math.floor((width - text.length) / 2));
@@ -894,15 +896,49 @@ function start2048() {
     });
     container.add(gameArea);
 
-    gameContentLines = [];
-    for (let i = 0; i < 9; i++) {
-        const line = new TextRenderable(renderer, {
-            id: `line-${i}`,
-            content: "",
-            fg: "#FFFFFF",
+    // Grid Container
+    const gridBox = new BoxRenderable(renderer, {
+        width: 40, // 4 * 8 (tiles) + 3 (gaps) + 2 (padding) + 2 (border) = 39. Round to 40.
+        flexDirection: "column",
+        alignItems: "center",
+        padding: 1,
+        backgroundColor: "#222222",
+        borderStyle: "rounded",
+        borderColor: "#555555"
+    });
+    gameArea.add(gridBox);
+
+    tileBoxes = [];
+    tileTexts = [];
+    
+    // Create 4x4 Grid using Rows
+    for (let r = 0; r < 4; r++) {
+        const row = new BoxRenderable(renderer, {
+            flexDirection: "row",
+            gap: 1,
+            marginBottom: 1
         });
-        gameContentLines.push(line);
-        gameArea.add(line);
+        gridBox.add(row);
+        
+        for (let c = 0; c < 4; c++) {
+            const tile = new BoxRenderable(renderer, {
+                width: 8,
+                height: 3,
+                backgroundColor: "#333333",
+                alignItems: "center",
+                justifyContent: "center"
+            });
+            
+            const tileText = new TextRenderable(renderer, {
+                content: "",
+                fg: "#FFFFFF"
+            });
+            tile.add(tileText);
+            
+            row.add(tile);
+            tileBoxes.push(tile);
+            tileTexts.push(tileText);
+        }
     }
 
     // Footer
@@ -943,25 +979,40 @@ function render2048() {
     }
 
     const grid = state.grid;
-    const lines: string[] = [];
     
-    const border = "+------+------+------+------+";
-    lines.push(border);
-    
-    for (let r = 0; r < 4; r++) {
-        let rowStr = "|";
-        for (let c = 0; c < 4; c++) {
-            const val = grid[r]![c]!;
-            const valStr = val === 0 ? "      " : val.toString().padStart(6, " ");
-            rowStr += valStr + "|";
-        }
-        lines.push(rowStr);
-        lines.push(border);
-    }
-
-    for (let i = 0; i < lines.length; i++) {
-        if (gameContentLines[i]) {
-            gameContentLines[i]!.content = lines[i]!;
+    // Update existing boxes
+    for (let i = 0; i < 16; i++) {
+        const r = Math.floor(i / 4);
+        const c = i % 4;
+        const val = grid[r]![c]!;
+        
+        const tileBox = tileBoxes[i]!;
+        const textNode = tileTexts[i]!;
+        
+        if (val === 0) {
+            tileBox.backgroundColor = "#333333";
+            textNode.content = "";
+        } else {
+            // Colors logic usually in 2048.ts, but we'll do simple mapping here or import it.
+             // We'll use getTileColor helper if we add it, or simple switch here.
+             const colors: Record<number, string> = {
+                 2: "#555555",
+                 4: "#555577",
+                 8: "#555599",
+                 16: "#5555BB",
+                 32: "#5555DD",
+                 64: "#5555FF",
+                 128: "#7755FF",
+                 256: "#9955FF",
+                 512: "#BB55FF",
+                 1024: "#DD55FF",
+                 2048: "#FF5500",
+             };
+             tileBox.backgroundColor = colors[val] || "#FF0000";
+             textNode.content = String(val);
+             
+             // Font color
+             textNode.fg = val >= 8 ? "#FFFFFF" : "#EEEEEE";
         }
     }
 }
@@ -1092,4 +1143,4 @@ const gameLoopId = setInterval(() => {
 
 // Init
 initMenuUI();
-renderMenu();
+// renderMenu() removed.
