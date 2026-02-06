@@ -562,10 +562,17 @@ function handleSpaceInvadersInput(sequence: string): boolean {
 
 function startSnake() {
   initContainer();
-  snakeState = initSnake(renderer.width, renderer.height);
-  // Correctly load high score
+  // Calculate Safe Dimensions for Logic
+  // Root: Border(1) + Padding(1) = 2 top/bottom/left/right
+  // Header(2) + Stats(2) + Footer(2) = 6 lines
+  // Buffer = ~10 lines
+  const safeHeight = Math.max(10, renderer.height - 12); 
+  const safeWidth = Math.max(10, renderer.width - 6);
+
+  // Load High Score
   const saved = loadGame(); 
-  snakeState.highScore = saved.snakeHighScore || 0;
+  // Init Logic
+  snakeState = initSnake(safeWidth, safeHeight, saved.snakeHighScore || 0);
   hasSavedSnakeScore = false;
 
   // Header
@@ -573,7 +580,7 @@ function startSnake() {
       flexDirection: "column",
       alignItems: "center",
       width: "100%",
-      marginBottom: 1
+      marginBottom: 0
   });
   container.add(header);
 
@@ -589,7 +596,7 @@ function startSnake() {
       flexDirection: "row",
       justifyContent: "center",
       width: "100%",
-      marginBottom: 1
+      marginBottom: 0
   });
   container.add(statsBar);
 
@@ -600,16 +607,18 @@ function startSnake() {
   });
   statsBar.add(scoreText);
   
-  // Game Area
+  // Game Area Container
+  // Use explicit size and borders
   snakeGameContainer = new BoxRenderable(renderer, {
       id: "snake-world",
-      width: "100%",
-      height: snakeState.height,
+      width: safeWidth + 2, // +2 for Border
+      height: safeHeight + 2, // +2 for Border
+      borderStyle: "single",
+      borderColor: "#00FF00",
+      // Center it
+      alignSelf: "center",
   });
   container.add(snakeGameContainer);
-
-  // Border Top
-  snakeGameContainer.add(new TextRenderable(renderer, { id: "border-top", content: "═".repeat(renderer.width), fg: "#00FF00" }));
 
   // Pools
   snakeBodyBoxes = [];
@@ -621,7 +630,7 @@ function startSnake() {
       width: 1,
       height: 1,
       backgroundColor: "#FF0000",
-      top: -100 // Hide initially
+      top: -100 
   });
   snakeFruitText = new TextRenderable(renderer, { content: "❤", fg: "#FFFFFF" });
   snakeFruitBox.add(snakeFruitText);
@@ -661,11 +670,14 @@ function renderSnake() {
   }
 
   // Sync Fruit
+  // Box with Border acts as padding?
+  // Usually in Yoga/OpenTUI, if border is present, children at 0,0 are inside border?
+  // Let's assume yes. 
+  // If not, we might need offsets.
   snakeFruitBox.top = state.food.y;
   snakeFruitBox.left = state.food.x;
 
   // Sync Body
-  // Ensure enough boxes
   while (snakeBodyBoxes.length < state.snake.length) {
       const box = new BoxRenderable(renderer, {
           position: "absolute",
@@ -673,7 +685,6 @@ function renderSnake() {
           height: 1,
           backgroundColor: "#00FF00" 
       });
-      // Maybe different char for head?
       const txt = new TextRenderable(renderer, { content: "", fg: "#000000" });
       box.add(txt);
       snakeBodyBoxes.push(box);
@@ -690,18 +701,17 @@ function renderSnake() {
             box.top = segment.y;
             box.left = segment.x;
             
-            // Visuals
             if (i === 0) { // Head
-                box.backgroundColor = "#00FF00"; // Bright Green
+                box.backgroundColor = "#00FF00"; 
                 text.content = "O";
                 text.fg = "#004400";
             } else {
-                box.backgroundColor = "#00AA00"; // Darker Green
+                box.backgroundColor = "#00AA00"; 
                 text.content = "•"; 
                 text.fg = "#002200";
             }
         } else {
-            box.top = -100; // Hide
+            box.top = -100;
         }
   }
 }
