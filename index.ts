@@ -132,15 +132,17 @@ function initMenuUI() {
 
     const options = GAMES.map(g => ({
         name: g.name,
-        description: " ", // Empty line for spacing
+        description: "", // No description
         value: g.id
     }));
 
     gameSelect = new SelectRenderable(renderer, {
         id: "game-select",
         width: 40,
-        height: 20, // More height for spacing
+        height: 20,
         options: options,
+        showDescription: false, // Ensure highlight bar is only 1 line high, centering the text
+        itemSpacing: 0, // Adds space between items for vertical balance
         // Theme
         backgroundColor: theme.background,
         selectedBackgroundColor: theme.success,
