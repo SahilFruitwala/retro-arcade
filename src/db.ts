@@ -41,22 +41,30 @@ try {
   // Ignore error if column exists
 }
 
+// Migration: Add flappy_high_score if missing
+try {
+  db.run("ALTER TABLE game_save ADD COLUMN flappy_high_score INTEGER DEFAULT 0");
+} catch(e) {
+   // Ignore
+}
+
 export interface SavedGame {
   highScore: number;
   currentLevel: number;
   currentScore: number;
   lives: number;
   snakeHighScore?: number;
+  flappyHighScore?: number;
 }
 
 export function loadGame(): SavedGame {
   const row = db.query(`
-    SELECT high_score, current_level, current_score, lives, snake_high_score
+    SELECT high_score, current_level, current_score, lives, snake_high_score, flappy_high_score
     FROM game_save WHERE id = 1
-  `).get() as { high_score: number; current_level: number; current_score: number; lives: number; snake_high_score: number } | null;
+  `).get() as { high_score: number; current_level: number; current_score: number; lives: number; snake_high_score: number; flappy_high_score: number } | null;
   
   if (!row) {
-    return { highScore: 0, currentLevel: 1, currentScore: 0, lives: 3, snakeHighScore: 0 };
+    return { highScore: 0, currentLevel: 1, currentScore: 0, lives: 3, snakeHighScore: 0, flappyHighScore: 0 };
   }
   
   return {
@@ -65,6 +73,7 @@ export function loadGame(): SavedGame {
     currentScore: row.current_score,
     lives: row.lives,
     snakeHighScore: row.snake_high_score || 0,
+    flappyHighScore: row.flappy_high_score || 0,
   };
 }
 
@@ -82,6 +91,10 @@ export function saveGame(data: SavedGame): void {
 
 export function saveSnakeHighScore(score: number): void {
     db.run(`UPDATE game_save SET snake_high_score = ?1 WHERE id = 1`, [score]);
+}
+
+export function saveFlappyHighScore(score: number): void {
+    db.run(`UPDATE game_save SET flappy_high_score = ?1 WHERE id = 1`, [score]);
 }
 
 export function resetProgress(): void {

@@ -16,15 +16,15 @@ const SHIELD_CHARS = ["█", "▓", "▒", "░", " "];
 function getLevelConfig(level: number) {
   return {
     // Start with 3 rows, add 1 every 3 levels, max 5
-    enemyRows: Math.min(5, 2 + Math.floor(level / 3)),
+    enemyRows: Math.min(5, 3 + Math.floor((level - 1) / 3)),
     // Start with 5 columns, add 1 every 2 levels, max 9
-    enemyCols: Math.min(9, 4 + Math.floor(level / 2)),
-    // Base enemy speed (higher = slower). Start slow, decrease by 1 each level
-    baseSpeed: Math.max(8, 20 - level),
-    // Enemy shoot chance - start very low, increase slowly
-    shootChance: Math.min(0.015, 0.002 + level * 0.001),
+    enemyCols: Math.min(10, 5 + Math.floor((level - 1) / 2)),
+    // Base enemy speed (higher = slower). Much faster now.
+    baseSpeed: Math.max(2, 6 - Math.floor(level / 2)),
+    // Enemy shoot chance - significantly increased for more action
+    shootChance: Math.min(0.1, 0.02 + level * 0.01),
     // Max enemy bullets on screen
-    maxEnemyBullets: Math.min(3, 1 + Math.floor(level / 3)),
+    maxEnemyBullets: Math.min(6, 2 + Math.floor(level / 2)),
   };
 }
 
@@ -212,8 +212,8 @@ export function update(state: GameState): void {
     }
   }
   
-  // Move enemy bullets every 5 ticks (slower than player)
-  if (state.tickCount % 5 === 0) {
+  // Move enemy bullets every 3 ticks (slightly faster)
+  if (state.tickCount % 3 === 0) {
     for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
       const bullet = state.enemyBullets[i]!;
       bullet.pos.y += 1;
@@ -264,7 +264,7 @@ export function update(state: GameState): void {
     // Check shields
     for (const shield of state.shields) {
       if (shield.health > 0 &&
-          bullet.pos.y >= shield.pos.y - 1 && bullet.pos.y <= shield.pos.y + 1 &&
+          bullet.pos.y === shield.pos.y &&
           bullet.pos.x >= shield.pos.x - 2 && bullet.pos.x <= shield.pos.x + 2) {
         state.bullets.splice(bi, 1);
         shield.health--;
@@ -279,7 +279,7 @@ export function update(state: GameState): void {
     
     // Check player
     if (bullet.pos.y === state.player.pos.y &&
-        Math.abs(bullet.pos.x - state.player.pos.x) <= 1) {
+        bullet.pos.x >= state.player.pos.x && bullet.pos.x <= state.player.pos.x + 2) {
       state.enemyBullets.splice(bi, 1);
       state.lives--;
       addExplosion(state, state.player.pos.x, state.player.pos.y);
@@ -297,7 +297,7 @@ export function update(state: GameState): void {
     // Check shields
     for (const shield of state.shields) {
       if (shield.health > 0 &&
-          bullet.pos.y >= shield.pos.y - 1 && bullet.pos.y <= shield.pos.y + 1 &&
+          bullet.pos.y === shield.pos.y &&
           bullet.pos.x >= shield.pos.x - 2 && bullet.pos.x <= shield.pos.x + 2) {
         state.enemyBullets.splice(bi, 1);
         shield.health--;

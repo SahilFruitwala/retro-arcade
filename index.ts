@@ -1,8 +1,9 @@
 import { createCliRenderer, TextRenderable, BoxRenderable } from "@opentui/core";
-import type { GameState, Entity, SnakeGameState } from "./src/types";
+import type { GameState, Entity, SnakeGameState, FlappyGameState } from "./src/types";
 import { createInitialState, movePlayer, shoot, update, getExplosionChar, getShieldChar } from "./src/invaders";
 import { initSnake, updateSnake, changeDirection } from "./src/snake";
-import { loadGame, saveGame, resetProgress, saveSnakeHighScore } from "./src/db";
+import { initFlappy, updateFlappy, jump } from "./src/flappy";
+import { loadGame, saveGame, resetProgress, saveSnakeHighScore, saveFlappyHighScore } from "./src/db";
 
 const renderer = await createCliRenderer({
   exitOnCtrlC: true, // Let OpenTUI handle Ctrl+C to ensure it works in binaries
@@ -21,6 +22,7 @@ interface GameOption {
 const GAMES: GameOption[] = [
   { id: "space-invaders", name: "SPACE INVADERS", enabled: true },
   { id: "snake", name: "SNAKE", enabled: true },
+  { id: "flappy", name: "FLAPPY BIRD", enabled: true },
   { id: "tetris", name: "TETRIS (Coming Soon)", enabled: false },
 ];
 
@@ -34,6 +36,8 @@ let invadersState: GameState | null = null;
 let hasSavedInvadersScore = false;
 let snakeState: SnakeGameState | null = null;
 let hasSavedSnakeScore = false;
+let flappyState: FlappyGameState | null = null;
+let hasSavedFlappyScore = false;
 
 // Helper to save game state (only for Space Invaders currently)
 function doSaveGame(): void {
@@ -185,6 +189,8 @@ function startGame(gameId: string) {
         startSpaceInvaders();
     } else if (gameId === "snake") {
         startSnake();
+    } else if (gameId === "flappy") {
+        startFlappy();
     }
 }
 
@@ -194,6 +200,8 @@ function stopGame() {
         invadersState = null;
     } else if (currentGameId === "snake") {
         snakeState = null;
+    } else if (currentGameId === "flappy") {
+        flappyState = null;
     }
     
     appMode = "MENU";
@@ -207,6 +215,7 @@ function stopGame() {
 // ----------------------------------------------------------------
 
 function startSpaceInvaders() {
+    initContainer();
     const savedGame = loadGame();
     invadersState = createInitialState(
         renderer.width, 
@@ -368,13 +377,22 @@ function handleSpaceInvadersInput(sequence: string): boolean {
         return true;
     }
     if ((sequence === "r" || sequence === "R") && (state.gameOver || state.won)) {
-        const hs = state.highScore;
-        const nextLevel = state.won ? state.level + 1 : state.level;
-        const nextScore = state.won ? state.score : 0;
-        invadersState = createInitialState(renderer.width, renderer.height, nextLevel, hs);
-        invadersState.score = nextScore;
-        doSaveGame();
-        renderSpaceInvaders();
+        if (state.won) {
+            saveGame({
+                highScore: state.highScore,
+                currentLevel: state.level + 1,
+                currentScore: state.score,
+                lives: 3
+            });
+        } else {
+            saveGame({
+                highScore: state.highScore,
+                currentLevel: state.level,
+                currentScore: 0,
+                lives: 3
+            });
+        }
+        startSpaceInvaders();
         return true;
     }
     if (sequence === "p" || sequence === "P") {
@@ -405,6 +423,7 @@ function handleSpaceInvadersInput(sequence: string): boolean {
 // ----------------------------------------------------------------
 
 function startSnake() {
+    initContainer();
     // Snake setup: width is half of renderer width (minus borders) because of double-width chars
     const availableWidth = Math.floor((renderer.width - 2) / 2); // 2 chars per cell
     const availableHeight = renderer.height - 6; // Title + Score + Border = ~6 lines
@@ -549,8 +568,7 @@ function handleSnakeInput(sequence: string): boolean {
         return true;
     }
     if (sequence === "r" || sequence === "R") {
-        snakeState = initSnake(state.width, state.height, state.highScore);
-        renderSnake();
+        startSnake();
         return true;
     }
      if (sequence === "p" || sequence === "P") {
@@ -581,6 +599,154 @@ function handleSnakeInput(sequence: string): boolean {
 }
 
 // ----------------------------------------------------------------
+// FLAPPY BIRD
+// ----------------------------------------------------------------
+
+function startFlappy() {
+    initContainer();
+    // Calculate safe dimensions
+    // Container: Border(2) + Padding(2) = 4 deduction
+    // Header/Footer: Title(1) + Score(1) + BorderTop(1) + Status(1) = 4 lines
+    const safeWidth = renderer.width - 6; // Extra safety margin
+    const safeHeight = Math.max(10, renderer.height - 10);
+
+    const saved = loadGame();
+    flappyState = initFlappy(safeWidth, safeHeight, saved.flappyHighScore);
+    hasSavedFlappyScore = false;
+
+    // Build UI
+    titleText = new TextRenderable(renderer, {
+        id: "game-title",
+        content: centerText("🐦 FLAPPY BIRD 🐦", safeWidth),
+        fg: "#FFFF00",
+    });
+    container.add(titleText);
+
+    scoreText = new TextRenderable(renderer, {
+        id: "score",
+        content: "",
+        fg: "#FFFFFF",
+    });
+    container.add(scoreText);
+
+    // Border Top
+    container.add(new TextRenderable(renderer, { id: "border-top", content: "─".repeat(safeWidth) }));
+
+    gameContentLines = [];
+    for (let i = 0; i < flappyState.height; i++) {
+        const line = new TextRenderable(renderer, {
+            id: `line-${i}`,
+            content: "",
+            fg: "#FFFFFF",
+        });
+        gameContentLines.push(line);
+        container.add(line);
+    }
+
+    statusText = new TextRenderable(renderer, {
+        id: "status",
+        content: "",
+        fg: "#555555",
+    });
+    container.add(statusText);
+
+    renderFlappy();
+}
+
+function renderFlappy() {
+    if (renderer.isDestroyed || !flappyState) return;
+    const state = flappyState;
+    const width = state.width;
+    const viewHeight = gameContentLines.length;
+
+    scoreText.content = centerText(`SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}`, width);
+
+    if (state.gameOver) {
+        statusText.content = centerText(`☠ GAME OVER - SCORE: ${state.score} │ R=Restart │ Q=Menu`, width);
+        statusText.fg = "#FF0000";
+    } else {
+        statusText.content = centerText(`SPACE/UP to JUMP │ Q MENU`, width);
+        statusText.fg = "#555555";
+    }
+
+    // Render Grid
+    const grid: string[] = new Array(viewHeight).fill(" ".repeat(width));
+
+    // Pipes
+    state.pipes.forEach(pipe => {
+        // Simple rendering: Box for pipes
+        const pipeChar = "║";
+        for (let y = 0; y < viewHeight; y++) {
+            // Need to map game Y to view Y? 
+            // Currently game height = renderer height. 
+            // But we only have viewHeight lines. 
+            // Let's assume game logic uses full height, we truncate top/bottom for display?
+            // Actually, best to pass viewHeight to initFlappy if we want exact logic.
+            // For now, let's map logic coordinates directly to view lines if they fit.
+            // Or better: Let flappy logic use 'viewHeight' as its 'height'.
+            // Let's rely on initFlappy receiving the correct height.
+            // But waiting... initFlappy got renderer.height.
+            // Let's adhere to the grid.
+            
+            if (y < pipe.gapY || y >= pipe.gapY + pipe.gapHeight) {
+                // Draw pipe at pipe.x
+                const x = Math.floor(pipe.x);
+                if (x >= 0 && x < width) {
+                     const line = grid[y]!;
+                     grid[y] = line.substring(0, x) + pipeChar + line.substring(x + 1);
+                }
+                const x2 = x + 1;
+                if (x2 >= 0 && x2 < width) {
+                     const line = grid[y]!;
+                     grid[y] = line.substring(0, x2) + pipeChar + line.substring(x2 + 1);
+                }
+            }
+        }
+    });
+
+    // Bird
+    const birdChar = "O"; // Or 🐦
+    const by = Math.floor(state.birdY);
+    const bx = Math.floor(state.width / 4);
+    
+    if (by >= 0 && by < viewHeight) {
+        const line = grid[by]!;
+        if (bx >= 0 && bx < width) {
+             grid[by] = line.substring(0, bx) + birdChar + line.substring(bx + 1);
+        }
+    }
+
+    // Update lines
+    for (let i = 0; i < viewHeight; i++) {
+        gameContentLines[i]!.content = grid[i]!;
+    }
+}
+
+function handleFlappyInput(sequence: string): boolean {
+    if (!flappyState) return false;
+    const state = flappyState;
+
+    if (sequence === "q" || sequence === "Q") {
+        stopGame();
+        return true;
+    }
+
+    if ((sequence === "r" || sequence === "R") && state.gameOver) {
+        startFlappy();
+        return true;
+    }
+
+    if (state.gameOver) return false;
+
+    if (sequence === " " || sequence === "\u001b[A") { // Space or Up
+        jump(state);
+        return true;
+    }
+    
+    return false;
+}
+
+// ----------------------------------------------------------------
 // MAIN LOOPS & HANDLERS
 // ----------------------------------------------------------------
 
@@ -592,6 +758,7 @@ renderer.on("resize", () => {
         // Simple restart on resize for now to avoid broken state
          if (currentGameId === "space-invaders") startGame("space-invaders");
          if (currentGameId === "snake") startGame("snake");
+         if (currentGameId === "flappy") startGame("flappy");
     }
 });
 
@@ -606,6 +773,7 @@ renderer.prependInputHandler((sequence: string) => {
     } else {
         if (currentGameId === "space-invaders") return handleSpaceInvadersInput(sequence);
         if (currentGameId === "snake") return handleSnakeInput(sequence);
+        if (currentGameId === "flappy") return handleFlappyInput(sequence);
     }
     return false;
 });
@@ -648,9 +816,16 @@ const gameLoopId = setInterval(() => {
               }
           }
           renderSnake();
+      } else if (currentGameId === "flappy" && flappyState) {
+          updateFlappy(flappyState);
+          if (flappyState.gameOver && !hasSavedFlappyScore) {
+              saveFlappyHighScore(flappyState.highScore);
+              hasSavedFlappyScore = true;
+          }
+          renderFlappy();
       }
   }
-}, 50);
+}, 33);
 
 // Init
 initMenuUI();
