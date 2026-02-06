@@ -1,0 +1,69 @@
+import { Database } from "bun:sqlite";
+
+const DB_PATH = "./game_save.db";
+
+// Initialize database
+const db = new Database(DB_PATH, { create: true });
+
+// Create tables
+db.run(`
+  CREATE TABLE IF NOT EXISTS game_save (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    high_score INTEGER NOT NULL DEFAULT 0,
+    current_level INTEGER NOT NULL DEFAULT 1,
+    current_score INTEGER NOT NULL DEFAULT 0,
+    lives INTEGER NOT NULL DEFAULT 3,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// Ensure a row exists
+const existing = db.query("SELECT id FROM game_save WHERE id = 1").get();
+if (!existing) {
+  db.run("INSERT INTO game_save (id, high_score, current_level, current_score, lives) VALUES (1, 0, 1, 0, 3)");
+}
+
+export interface SavedGame {
+  highScore: number;
+  currentLevel: number;
+  currentScore: number;
+  lives: number;
+}
+
+export function loadGame(): SavedGame {
+  const row = db.query(`
+    SELECT high_score, current_level, current_score, lives 
+    FROM game_save WHERE id = 1
+  `).get() as { high_score: number; current_level: number; current_score: number; lives: number } | null;
+  
+  if (!row) {
+    return { highScore: 0, currentLevel: 1, currentScore: 0, lives: 3 };
+  }
+  
+  return {
+    highScore: row.high_score,
+    currentLevel: row.current_level,
+    currentScore: row.current_score,
+    lives: row.lives,
+  };
+}
+
+export function saveGame(data: SavedGame): void {
+  db.run(`
+    UPDATE game_save 
+    SET high_score = ?1,
+        current_level = ?2,
+        current_score = ?3,
+        lives = ?4,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = 1
+  `, [data.highScore, data.currentLevel, data.currentScore, data.lives]);
+}
+
+export function resetProgress(): void {
+  db.run(`
+    UPDATE game_save 
+    SET current_level = 1, current_score = 0, lives = 3, updated_at = CURRENT_TIMESTAMP
+    WHERE id = 1
+  `);
+}
