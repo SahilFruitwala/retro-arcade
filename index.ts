@@ -1,9 +1,10 @@
 import { createCliRenderer, TextRenderable, BoxRenderable, SelectRenderable, SelectRenderableEvents } from "@opentui/core";
-import type { GameState, Entity, SnakeGameState, FlappyGameState, TwentyFortyEightGameState } from "./src/types";
+import type { GameState, Entity, SnakeGameState, FlappyGameState, TwentyFortyEightGameState, PongGameState } from "./src/types";
 import { createInitialState, movePlayer, shoot, update, getExplosionChar, getShieldChar } from "./src/invaders";
 import { initSnake, updateSnake, changeDirection } from "./src/snake";
 import { initFlappy, updateFlappy, jump } from "./src/flappy";
 import { init2048, move as move2048 } from "./src/2048";
+import { initPong, updatePong, movePlayerPaddle, WINNING_SCORE as PONG_WINNING_SCORE } from "./src/pong";
 import { loadGame, saveGame, resetProgress, saveSnakeHighScore, saveFlappyHighScore, saveTwentyFortyEightHighScore, getAllHighScores, loadThemeIndex, saveThemeIndex } from "./src/db";
 import { getCurrentTheme, setTheme, nextTheme, getThemeNames, type Theme } from "./src/theme";
 
@@ -28,6 +29,7 @@ const GAMES: GameOption[] = [
   { id: "space-invaders", name: "SPACE INVADERS", enabled: true },
   { id: "snake", name: "SNAKE", enabled: true },
   { id: "flappy", name: "FLAPPY BIRD", enabled: true },
+  { id: "pong", name: "PONG", enabled: true },
   { id: "2048", name: "2048", enabled: true },
   { id: "leaderboard", name: "HIGH SCORES", enabled: true },
   { id: "settings", name: "SETTINGS", enabled: true }
@@ -47,6 +49,7 @@ let flappyState: FlappyGameState | null = null;
 let hasSavedFlappyScore = false;
 let twentyFortyEightState: TwentyFortyEightGameState | null = null;
 let hasSaved2048Score = false;
+let pongState: PongGameState | null = null;
 
 // Helper to save game state (only for Space Invaders currently)
 function doSaveGame(): void {
@@ -472,6 +475,8 @@ function startGame(gameId: string) {
         startSnake();
     } else if (gameId === "flappy") {
         startFlappy();
+    } else if (gameId === "pong") {
+        startPong();
     } else if (gameId === "2048") {
         start2048();
     }
@@ -485,6 +490,8 @@ function stopGame() {
         snakeState = null;
     } else if (currentGameId === "flappy") {
         flappyState = null;
+    } else if (currentGameId === "pong") {
+        pongState = null;
     } else if (currentGameId === "2048") {
         twentyFortyEightState = null;
     }
@@ -1509,6 +1516,182 @@ function handle2048Input(sequence: string): boolean {
 }
 
 // ----------------------------------------------------------------
+// PONG
+// ----------------------------------------------------------------
+
+let pongGameContainer: BoxRenderable;
+let pongPlayerPaddle: BoxRenderable;
+let pongAiPaddle: BoxRenderable;
+let pongBall: BoxRenderable;
+
+function startPong() {
+    initContainer();
+    const theme = getCurrentTheme();
+    
+    const safeHeight = Math.max(15, renderer.height - 10);
+    const safeWidth = Math.max(40, renderer.width - 6);
+    
+    pongState = initPong(safeWidth, safeHeight);
+
+    // Header
+    const header = new BoxRenderable(renderer, {
+        flexDirection: "column",
+        alignItems: "center",
+        width: "100%",
+        marginBottom: 0
+    });
+    container.add(header);
+
+    titleText = new TextRenderable(renderer, {
+        id: "game-title",
+        content: "🏓 P O N G 🏓",
+        fg: theme.text,
+    });
+    header.add(titleText);
+
+    // Score Bar
+    const statsBar = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "center",
+        width: "100%",
+        marginBottom: 0
+    });
+    container.add(statsBar);
+
+    scoreText = new TextRenderable(renderer, {
+        id: "score",
+        content: "",
+        fg: theme.textHighlight,
+    });
+    statsBar.add(scoreText);
+
+    // Game Area
+    pongGameContainer = new BoxRenderable(renderer, {
+        id: "pong-world",
+        width: safeWidth + 2,
+        height: safeHeight + 2,
+        borderStyle: "single",
+        borderColor: theme.border,
+        alignSelf: "center",
+    });
+    container.add(pongGameContainer);
+
+    // AI Paddle (left side - red)
+    pongAiPaddle = new BoxRenderable(renderer, {
+        position: "absolute",
+        width: 1,
+        height: pongState.paddleHeight,
+        backgroundColor: "#FF4444",
+        left: 1,
+        top: pongState.aiY
+    });
+    pongGameContainer.add(pongAiPaddle);
+
+    // Player Paddle (right side - bright cyan)
+    pongPlayerPaddle = new BoxRenderable(renderer, {
+        position: "absolute",
+        width: 1,
+        height: pongState.paddleHeight,
+        backgroundColor: "#00FFFF",
+        left: safeWidth - 2,
+        top: pongState.playerY
+    });
+    pongGameContainer.add(pongPlayerPaddle);
+
+    // Ball
+    pongBall = new BoxRenderable(renderer, {
+        position: "absolute",
+        width: 1,
+        height: 1,
+        backgroundColor: theme.warning,
+        left: Math.floor(pongState.ballX),
+        top: Math.floor(pongState.ballY)
+    });
+    pongGameContainer.add(pongBall);
+
+    // Footer
+    const footer = new BoxRenderable(renderer, {
+        flexDirection: "row",
+        justifyContent: "center",
+        width: "100%",
+        marginTop: 1
+    });
+    container.add(footer);
+
+    statusText = new TextRenderable(renderer, {
+        id: "status",
+        content: "",
+        fg: theme.textMuted,
+    });
+    footer.add(statusText);
+
+    renderPong();
+}
+
+function renderPong() {
+    if (renderer.isDestroyed || !pongState || !pongGameContainer) return;
+    const state = pongState;
+    const theme = getCurrentTheme();
+
+    scoreText.content = `YOU ${state.playerScore}  -  ${state.aiScore} AI`;
+
+    if (state.gameOver) {
+        const winner = state.playerScore >= 5 ? "YOU WIN! 🏆" : "AI WINS!";
+        statusText.content = `${winner} │ R=Restart │ Q=Menu`;
+        statusText.fg = state.playerScore >= 5 ? theme.success : theme.danger;
+    } else if (state.paused) {
+        statusText.content = `⏸ PAUSED`;
+        statusText.fg = theme.warning;
+    } else {
+        statusText.content = `↑/↓ MOVE │ P PAUSE │ Q MENU │ First to ${PONG_WINNING_SCORE} wins!`;
+        statusText.fg = theme.textMuted;
+    }
+
+    // Update positions
+    pongPlayerPaddle.top = Math.floor(state.playerY);
+    pongAiPaddle.top = Math.floor(state.aiY);
+    pongBall.left = Math.floor(state.ballX);
+    pongBall.top = Math.floor(state.ballY);
+}
+
+function handlePongInput(sequence: string): boolean {
+    if (!pongState) return false;
+    const state = pongState;
+
+    if (sequence === "q" || sequence === "Q") {
+        stopGame();
+        return true;
+    }
+
+    if ((sequence === "r" || sequence === "R") && state.gameOver) {
+        startPong();
+        return true;
+    }
+
+    if (sequence === "p" || sequence === "P") {
+        if (state.paused) {
+            return handlePauseMenuInput(sequence);
+        }
+        state.paused = true;
+        showPauseMenu();
+        return true;
+    }
+
+    if (state.gameOver || state.paused) return false;
+
+    if (sequence === "\u001b[A" || sequence === "w" || sequence === "W") { // Up
+        movePlayerPaddle(state, -2);
+        return true;
+    }
+    if (sequence === "\u001b[B" || sequence === "s" || sequence === "S") { // Down
+        movePlayerPaddle(state, 2);
+        return true;
+    }
+
+    return false;
+}
+
+// ----------------------------------------------------------------
 // MAIN LOOPS & HANDLERS
 // ----------------------------------------------------------------
 
@@ -1541,6 +1724,7 @@ renderer.prependInputHandler((sequence: string) => {
         if (currentGameId === "space-invaders") return handleSpaceInvadersInput(sequence);
         if (currentGameId === "snake") return handleSnakeInput(sequence);
         if (currentGameId === "flappy") return handleFlappyInput(sequence);
+        if (currentGameId === "pong") return handlePongInput(sequence);
         if (currentGameId === "2048") return handle2048Input(sequence);
     }
     return false;
@@ -1555,6 +1739,7 @@ setInterval(() => {
 
 // Main Game Loop
 let snakeTick = 0;
+let pongTick = 0;
 const gameLoopId = setInterval(() => {
   if (renderer.isDestroyed) {
     clearInterval(gameLoopId);
@@ -1597,6 +1782,13 @@ const gameLoopId = setInterval(() => {
                hasSaved2048Score = true;
            }
            render2048();
+       } else if (currentGameId === "pong" && pongState) {
+           pongTick++;
+           if (pongTick >= 2) { // Update every 2 frames (~66ms) for smoother motion
+               pongTick = 0;
+               updatePong(pongState);
+           }
+           renderPong();
        }
   }
 }, 33);

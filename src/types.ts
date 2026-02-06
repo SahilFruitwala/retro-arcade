@@ -89,3 +89,24 @@ export interface TwentyFortyEightGameState {
   width: number; // For rendering
   height: number;
 }
+
+export interface PongGameState {
+  // Paddles
+  playerY: number;      // Left paddle (player)
+  aiY: number;          // Right paddle (AI)
+  paddleHeight: number;
+  paddleWidth: number;
+  // Ball
+  ballX: number;
+  ballY: number;
+  ballVX: number;       // Velocity X
+  ballVY: number;       // Velocity Y
+  // Scores
+  playerScore: number;
+  aiScore: number;
+  // Game state
+  paused: boolean;
+  gameOver: boolean;
+  width: number;
+  height: number;
+}
