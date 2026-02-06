@@ -1,6 +1,17 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 
-const DB_PATH = "./game_save.db";
+const DB_DIR = join(homedir(), ".retro-arcade");
+const DB_PATH = join(DB_DIR, "game_save.db");
+
+// Ensure directory exists
+try {
+  mkdirSync(DB_DIR, { recursive: true });
+} catch (e) {
+  // Ignore error if it already exists or if we can't create it (Database will likely fail then too)
+}
 
 // Initialize database
 const db = new Database(DB_PATH, { create: true });

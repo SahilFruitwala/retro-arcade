@@ -3,11 +3,13 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "space-invaders",
+      "name": "retro-arcade",
       "dependencies": {
         "@opentui/core": "^0.1.77",
       },
       "devDependencies": {
+        "@opentui/core-linux-x64": "^0.1.77",
+        "@opentui/core-win32-x64": "^0.1.77",
         "@types/bun": "latest",
       },
       "peerDependencies": {
