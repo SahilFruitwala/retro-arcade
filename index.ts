@@ -5,7 +5,7 @@ import { initSnake, updateSnake, changeDirection } from "./src/snake";
 import { loadGame, saveGame, resetProgress, saveSnakeHighScore } from "./src/db";
 
 const renderer = await createCliRenderer({
-  exitOnCtrlC: false, // We'll handle it ourselves
+  exitOnCtrlC: true, // Let OpenTUI handle Ctrl+C to ensure it works in binaries
   targetFps: 30,
 });
 
@@ -47,17 +47,20 @@ function doSaveGame(): void {
   }
 }
 
-// Handle Ctrl+C properly
-const handleExit = () => {
-  if (appMode === "GAME" && currentGameId === "space-invaders") {
-    doSaveGame();
-  }
-  renderer.destroy();
-  process.exit(0);
-};
+// Cleanup on exit
+process.on("exit", () => {
+    if (appMode === "GAME" && currentGameId === "space-invaders") {
+        doSaveGame();
+    }
+});
 
-process.on("SIGINT", handleExit);
-process.on("SIGTERM", handleExit);
+// Explicitly handle SIGINT/SIGTERM to ensure the exit event fires
+process.on("SIGINT", () => {
+    process.exit(0);
+});
+process.on("SIGTERM", () => {
+    process.exit(0);
+});
 
 // UI Components
 let container: BoxRenderable;
@@ -596,11 +599,7 @@ renderer.on("resize", () => {
 renderer.prependInputHandler((sequence: string) => {
     if (renderer.isDestroyed) return false;
 
-    // Global Force Exit
-    if (sequence === "\u0003") { // Ctrl+C
-        handleExit();
-        return true;
-    }
+    // Ctrl+C is handled by renderer now
 
     if (appMode === "MENU") {
         return handleMenuInput(sequence);

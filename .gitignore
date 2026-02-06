@@ -37,3 +37,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .agents
 
 game_save.db
+
+retro-arcade
+retro-arcade-mac
+
+
+Formula/*
