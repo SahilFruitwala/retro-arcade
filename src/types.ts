@@ -45,3 +45,15 @@ export interface GameState {
   enemyDirection: 1 | -1;
   tickCount: number;
 }
+
+export interface SnakeGameState {
+  snake: Position[]; // index 0 is head
+  direction: Position;
+  food: Position;
+  score: number;
+  highScore: number;
+  gameOver: boolean;
+  paused: boolean;
+  width: number;
+  height: number;
+}
