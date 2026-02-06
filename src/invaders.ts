@@ -281,7 +281,7 @@ export function update(state: GameState): void {
     if (bullet.pos.y === state.player.pos.y &&
         bullet.pos.x >= state.player.pos.x && bullet.pos.x <= state.player.pos.x + 2) {
       state.enemyBullets.splice(bi, 1);
-      state.lives--;
+      state.lives = Math.max(0, state.lives - 1);
       addExplosion(state, state.player.pos.x, state.player.pos.y);
       state.player.pos.x = Math.floor(state.width / 2);
       

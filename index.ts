@@ -131,8 +131,8 @@ function initMenuUI() {
         options: options,
         // Theme
         backgroundColor: "#111111",
-        selectedBackgroundColor: "#00FF00",
-        selectedTextColor: "#000000"
+        selectedBackgroundColor: "#006600", // Darker green for contrast
+        selectedTextColor: "#FFFFFF"       // White text
     });
 
     gameSelect.on(SelectRenderableEvents.ITEM_SELECTED, (index, option) => {
@@ -168,6 +168,9 @@ let siEnemyBoxes: BoxRenderable[] = []; // Pool/List
 let siEnemyTexts: TextRenderable[] = []; 
 let siBulletBoxes: BoxRenderable[] = []; // Pool
 let siBulletTexts: TextRenderable[] = []; 
+let siShieldTexts: TextRenderable[] = []; // Pool/Refs
+let siExplosionBoxes: BoxRenderable[] = []; // Pool
+let siExplosionTexts: TextRenderable[] = []; 
 let siGameContainer: BoxRenderable; // Relative container for game world
 
 let statusText: TextRenderable; // Global status text reference
@@ -255,8 +258,26 @@ function startSpaceInvaders() {
         savedGame.currentLevel, 
         savedGame.highScore
     );
-    invadersState.score = savedGame.currentScore;
-    invadersState.lives = savedGame.lives;
+    // Only inherit score/lives if valid continuation? 
+    // Actually, createInitialState sets defaults (lives=3). 
+    // If we overwrite with savedGame.lives (which might be 0), we break it.
+    // Logic: If loading progress, ensure lives > 0. If 0, reset to 3.
+    // OR: Just trust createInitialState default (3) and only restore Score/Level.
+    // If we want persistent sessions, 'lives' should only be restored if > 0.
+    
+    if (savedGame.lives > 0) {
+        invadersState.lives = savedGame.lives;
+        invadersState.score = savedGame.currentScore;
+    } else {
+        // Saved game was dead => Start Fresh Level 1 logic?
+        // But createInitialState used savedGame.currentLevel...
+        // If lives == 0, we should probably reset level too logic-wise, 
+        // OR just give 3 lives on current level.
+        // Let's give 3 lives (default) and keep score/level as "Continue".
+        // SO: Do NOT overwrite lives with 0.
+        invadersState.score = savedGame.currentScore;
+    }
+    
     hasSavedInvadersScore = false;
 
     // Build UI
@@ -344,6 +365,30 @@ function startSpaceInvaders() {
     siUfoText = new TextRenderable(renderer, { content: "<O>", fg: "#FFFFFF" });
     siUfoBox.add(siUfoText);
     siGameContainer.add(siUfoBox);
+    
+    // Initialize Shields (Fixed number)
+    // We can just create them here since they don't move, only update content/color
+    siShieldTexts = [];
+    if (invadersState.shields) {
+        invadersState.shields.forEach(shield => {
+            const box = new BoxRenderable(renderer, {
+                position: "absolute",
+                top: shield.pos.y,
+                left: shield.pos.x,
+                width: 1,
+                height: 1,
+                backgroundColor: "transparent"
+            });
+            const txt = new TextRenderable(renderer, { content: getShieldChar(shield.health), fg: "#00FF00" });
+            box.add(txt);
+            siGameContainer.add(box);
+            siShieldTexts.push(txt);
+        });
+    }
+
+    // Initialize Explosion Pool
+    siExplosionBoxes = [];
+    siExplosionTexts = [];
 
     // Footer (Status)
     const footer = new BoxRenderable(renderer, {
@@ -368,7 +413,7 @@ function renderSpaceInvaders(): void {
   if (renderer.isDestroyed || !invadersState || !siGameContainer) return;
   const state = invadersState;
 
-  const livesStr = "♥".repeat(state.lives) + "♡".repeat(Math.max(0, 3 - state.lives));
+  const livesStr = "♥".repeat(Math.max(0, state.lives)) + "♡".repeat(Math.max(0, 3 - state.lives));
   scoreText.content = `SCORE ${String(state.score).padStart(5, "0")}    HI ${String(state.highScore).padStart(5, "0")}    ${livesStr}`;
 
   levelText.content = `LEVEL ${state.level}`;
@@ -431,27 +476,23 @@ function renderSpaceInvaders(): void {
             box.left = e.pos.x;
             box.width = e.char.length;
             
-            // Style based on color prop
-            if (e.color === "#FF0000") { // Invader
-                box.backgroundColor = "#990000"; // Darker red bg
-                text.fg = "#FF9999";
-            } else {
-                box.backgroundColor = "#CCCCCC";
-                text.fg = "#000000";
-            }
-            text.content = e.char;
-        } else {
-            box.top = -100; // Hide
-        }
+          
+          // Generic Enemy Styling
+          box.backgroundColor = "transparent"; // Default transparent
+          text.fg = e.color; // Use entity color directly
+          text.content = e.char;
+      } else {
+          box.top = -100; // Hide
+      }
   }
 
-  // 4. Bullets (Player + Enemy)
+  // 4. Bullets
   const allBullets = [...state.bullets, ...state.enemyBullets];
   while (siBulletBoxes.length < allBullets.length) {
        const box = new BoxRenderable(renderer, {
           position: "absolute",
           width: 1,
-          height: 1,
+          height: 1
       });
       const txt = new TextRenderable(renderer, { content: "│" });
       box.add(txt);
@@ -469,34 +510,55 @@ function renderSpaceInvaders(): void {
           const b = allBullets[i]!;
           box.top = b.pos.y;
           box.left = b.pos.x;
-          box.width = b.char.length; // usually 1
+          box.width = b.char.length; 
           
-          if (b.color === "#00FF00") { // Player bullet
-               box.backgroundColor = "transparent";
-               text.content = "│";
-               text.fg = "#00FF00";
-          } else { // Enemy bullet
-               box.backgroundColor = "transparent";
-               text.content = b.char; // "}"
-               text.fg = "#FFFF00";
-          }
+          box.backgroundColor = "transparent";
+          text.content = b.char;
+          text.fg = b.color;
       } else {
-          box.top = -100; // Hide
+          box.top = -100;
       }
   }
+
+  // 5. Shields
+  if (state.shields && siShieldTexts.length === state.shields.length) {
+      for (let i = 0; i < state.shields.length; i++) {
+          const s = state.shields[i]!;
+          // health 0-4
+          siShieldTexts[i]!.content = getShieldChar(s.health);
+          if (s.health <= 0) siShieldTexts[i]!.content = " ";
+      }
+  }
+
+  // 6. Explosions
+  const explosions = state.explosions || [];
+  while (siExplosionBoxes.length < explosions.length) {
+       const box = new BoxRenderable(renderer, {
+          position: "absolute",
+          width: 1,
+          height: 1,
+          backgroundColor: "transparent"
+      });
+      const txt = new TextRenderable(renderer, { content: "*", fg: "#FFFF00" });
+      box.add(txt);
+      siExplosionBoxes.push(box);
+      siExplosionTexts.push(txt);
+      siGameContainer.add(box);
+  }
   
-  // Shields and Explosions could be added here similar to bullets
-  // For simplicity, we are ignoring shield/explosions in this first entity pass or rendering them as simple text lines?
-  // Actually, Explosions are important. 
-  // Let's treat everything else as part of the "GameContentLines" if we kept it? 
-  // We removed "gameContentLines". So we MUST render Shields/Explosions or they vanish.
-  
-  // Re-using bullet boxes or creating a generic "Particle" pool would be best.
-  // Let's add Explosions to the "bullet" pool logic for visual simplicity? 
-  // Or just create on fly (expensive)? 
-  // Let's ignore shields for this specific iteration to ensure standard gameplay works first? 
-  // No, user wants verification.
-  // I'll add "Particles" pool for explosions.
+  for (let i = 0; i < siExplosionBoxes.length; i++) {
+        const box = siExplosionBoxes[i]!;
+        const text = siExplosionTexts[i]!;
+        if (i < explosions.length) {
+            const exp = explosions[i]!;
+            box.top = exp.pos.y;
+            box.left = exp.pos.x;
+            text.content = getExplosionChar(exp.frame);
+        } else {
+            box.top = -100;
+        }
+  }
+
 }
 
 function handleSpaceInvadersInput(sequence: string): boolean {
