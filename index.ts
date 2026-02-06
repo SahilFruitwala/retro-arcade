@@ -1,6 +1,6 @@
 import { createCliRenderer, TextRenderable, BoxRenderable } from "@opentui/core";
 import type { GameState, Entity, SnakeGameState } from "./src/types";
-import { createInitialState, movePlayer, shoot, update, getExplosionChar, getShieldChar } from "./src/game";
+import { createInitialState, movePlayer, shoot, update, getExplosionChar, getShieldChar } from "./src/invaders";
 import { initSnake, updateSnake, changeDirection } from "./src/snake";
 import { loadGame, saveGame, resetProgress, saveSnakeHighScore } from "./src/db";
 
